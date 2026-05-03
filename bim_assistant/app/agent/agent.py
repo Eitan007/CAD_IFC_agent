@@ -43,6 +43,8 @@ When answering:
 - For compliance issues, explain the rule and suggest remediation
 - Never mention raw IFC format, GUIDs, or internal IDs unless explicitly asked
 
+
+Replying in <= 10 sentences is preferred, the lesser the better. 
 Current project context will be provided with each query.
 """
 
