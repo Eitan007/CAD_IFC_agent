@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
-import { ifcAssetUrl } from "../api/client";
+import { fetchIfcBuffer } from "../api/client";
 import { useUiStore } from "../stores/uiStore";
 
 /** web-ifc only prefixes `.wasm` with wasmPath; pthread worker URLs use IFC fetch dirname → breaks when IFC is `/api/.../ifc`. */
@@ -137,10 +137,12 @@ export function CADViewer({ projectId }: { projectId: string }) {
           setLoadPct(Math.round(simulatedPct));
         }, 300);
 
-        const model = await new Promise<THREE.Object3D>((resolve, reject) =>
-          (loader as unknown as { load: (url: string, onLoad: (m: THREE.Object3D) => void, onProgress: unknown, onError: (e: unknown) => void) => void })
-            .load(ifcAssetUrl(projectId), resolve, undefined, reject)
-        );
+        // Fetch via fetch() so we can send the ngrok-skip-browser-warning header,
+        // then parse the buffer directly — avoids the CORS issue with plain URL loads.
+        const buffer = await fetchIfcBuffer(projectId);
+        const model = await (
+          loader as unknown as { parse: (buffer: ArrayBuffer) => Promise<THREE.Object3D> }
+        ).parse(buffer);
         clearInterval(ticker);
         if (cancelled) return;
 

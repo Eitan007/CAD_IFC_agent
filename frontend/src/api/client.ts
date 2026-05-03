@@ -78,8 +78,9 @@ export async function sendChat(
   return res.json();
 }
 
-export function ifcAssetUrl(projectId: string): string {
-  // Append header as query param for <img>/fetch driven by a plain URL (IFC viewer uses fetch internally)
-  const base = `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/ifc`;
-  return API_BASE ? `${base}?ngrok-skip-browser-warning=true` : base;
+export async function fetchIfcBuffer(projectId: string): Promise<ArrayBuffer> {
+  const url = `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/ifc`;
+  const res = await fetch(url, { headers: { ...EXTRA_HEADERS } });
+  if (!res.ok) throw new Error(`IFC fetch failed: ${res.status} ${res.statusText}`);
+  return res.arrayBuffer();
 }
