@@ -1,0 +1,36 @@
+# Secrets / local env (keep *.example tracked)
+bim_assistant/.env
+bim_assistant/.env.*
+!bim_assistant/.env.example
+
+# Frontend (Vite / npm)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python (bim_assistant)
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Runtime uploads & outputs (Docker / local API)
+bim_assistant/data/uploads/
+bim_assistant/data/processed/
+bim_assistant/data/chroma/
+
+# IDE / OS
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+
+# frontend
+node_modules
+dist
+*.local

@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bim
+      POSTGRES_PASSWORD: bim_secret
+      POSTGRES_DB: bim_db
+    ports:
+      # 5433 avoids clashing with a Postgres already bound to localhost:5432
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Without -d, pg_isready defaults to DB name = user ("bim"), which does not exist.
+      test: ["CMD-SHELL", "pg_isready -U bim -d bim_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/bim_secret
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p bim_secret 'RETURN 1 AS ok' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
+  api:
+    build: .
+    ports:
+      # Override if busy: BIM_API_HOST_PORT=8001 docker compose up -d
+      - "${BIM_API_HOST_PORT:-8000}:8000"
+    env_file: .env
+    environment:
+      # Inside Compose, Postgres is reachable at hostname `postgres`, not localhost
+      POSTGRES_URL: postgresql+asyncpg://bim:bim_secret@postgres:5432/bim_db
+      NEO4J_URI: bolt://neo4j:7687
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  postgres_data:
+  neo4j_data:
