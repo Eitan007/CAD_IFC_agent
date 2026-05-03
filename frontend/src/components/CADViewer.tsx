@@ -89,7 +89,9 @@ export function CADViewer({ projectId }: { projectId: string }) {
     };
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // three r149 uses outputEncoding + sRGBEncoding (outputColorSpace / SRGBColorSpace arrived in r152)
+    (renderer as unknown as { outputEncoding: number }).outputEncoding =
+      (THREE as unknown as { sRGBEncoding: number }).sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
     mount.replaceChildren(renderer.domElement);
@@ -135,7 +137,10 @@ export function CADViewer({ projectId }: { projectId: string }) {
           setLoadPct(Math.round(simulatedPct));
         }, 300);
 
-        const model = await loader.loadAsync(ifcAssetUrl(projectId));
+        const model = await new Promise<THREE.Object3D>((resolve, reject) =>
+          (loader as unknown as { load: (url: string, onLoad: (m: THREE.Object3D) => void, onProgress: unknown, onError: (e: unknown) => void) => void })
+            .load(ifcAssetUrl(projectId), resolve, undefined, reject)
+        );
         clearInterval(ticker);
         if (cancelled) return;
 

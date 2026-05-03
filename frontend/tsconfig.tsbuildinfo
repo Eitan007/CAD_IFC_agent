@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/client.ts","./src/api/types.ts","./src/components/CADViewer.tsx","./src/components/ChatPanel.tsx","./src/components/StatusBar.tsx","./src/pages/ProjectWorkspace.tsx","./src/pages/UploadPage.tsx","./src/stores/uiStore.ts"],"version":"5.7.3"}

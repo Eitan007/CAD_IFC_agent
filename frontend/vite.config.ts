@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -6,6 +7,16 @@ const apiProxyTarget =
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      // web-ifc-three@0.0.126 imports mergeGeometries which only exists in three r152+.
+      // Shim re-exports mergeBufferGeometries (the r149 name) as mergeGeometries.
+      "three/examples/jsm/utils/BufferGeometryUtils": path.resolve(
+        __dirname,
+        "src/shims/BufferGeometryUtils.js"
+      ),
+    },
+  },
   server: {
     port: 5173,
     // COOP/COEP makes crossOriginIsolated true → web-ifc picks pthread/WASM-mt build,
