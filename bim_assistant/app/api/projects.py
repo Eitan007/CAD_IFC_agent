@@ -1,23 +1,23 @@
 """
-SRS-aligned project API: /api/projects/*
-
 Maps legacy behaviours (upload folder / processed JSON / LLM query) to the frontend contract.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.agent.agent import run_agent
 from app.config import get_settings
 from app.services import project_jobs
+from app.services.project_jobs import processed_glb_path
 from app.storage.database import get_session
 from app.storage.repository import get_project
 
@@ -43,6 +43,8 @@ class PipelineStatusResponse(BaseModel):
     project_id: str
     element_count: int | None = None
     error: str | None = None
+    graph_ready: bool = False
+    json_ready: bool = False
 
 
 class ChatRequest(BaseModel):
@@ -63,6 +65,12 @@ class ChatResponse(BaseModel):
     tool_calls: list[dict]
     iterations: int
     warning: str | None = None
+
+
+class VoiceTokenResponse(BaseModel):
+    token: str
+    url: str
+    room_name: str
 
 
 def _find_uploaded_file(project_id: str) -> Path:
@@ -115,6 +123,57 @@ async def upload_project(file: UploadFile = File(...)):
         logger.exception("Upload failed")
         raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
+    await project_jobs.mark_upload_received(project_id)
+    return UploadProjectResponse(project_id=project_id)
+
+
+@router.put("/{project_id}/upload", response_model=UploadProjectResponse)
+async def upload_project_with_id(
+    project_id: str,
+    request: Request,
+    x_filename: str = Header(default="model.ifc", alias="X-Filename"),
+    content_encoding: str | None = Header(default=None, alias="Content-Encoding"),
+):
+    """
+    Accept raw or gzip-compressed IFC bytes for a client-assigned project id.
+    Used for local preview + background sync.
+    """
+    suffix = Path(x_filename).suffix.lower()
+    if suffix != ALLOWED_UPLOAD_SUFFIX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {ALLOWED_UPLOAD_SUFFIX} uploads are supported.",
+        )
+
+    dest_dir = Path(settings.upload_dir) / project_id
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(x_filename).name
+    dest_path = dest_dir / safe_name
+
+    body = await request.body()
+    if content_encoding and content_encoding.lower() == "gzip":
+        try:
+            body = gzip.decompress(body)
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid gzip body: {exc}") from exc
+
+    if len(body) > MAX_IFC_BYTES:
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum size ({MAX_IFC_BYTES // (1024 * 1024)} MB).",
+        )
+
+    try:
+        dest_path.write_bytes(body)
+    except Exception as exc:
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        logger.exception("Upload failed project_id=%s", project_id)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
+
+    await project_jobs.mark_upload_received(project_id)
     return UploadProjectResponse(project_id=project_id)
 
 
@@ -126,8 +185,11 @@ async def enqueue_process(project_id: str, background_tasks: BackgroundTasks):
     job = await project_jobs.get_job(project_id)
     st = job.get("status")
 
+    if job.get("graph_ready") and job.get("json_ready"):
+        return ProcessEnqueueResponse(status="completed")
+
     proc = project_jobs.processed_json_path(project_id)
-    if proc.exists() and st not in ("processing", "queued"):
+    if proc.exists() and st not in ("processing", "queued") and job.get("graph_ready"):
         return ProcessEnqueueResponse(status="completed")
 
     if st == "processing":
@@ -152,17 +214,26 @@ async def pipeline_status(project_id: str):
         project_id=project_id,
         element_count=info.get("element_count"),
         error=info.get("error"),
+        graph_ready=bool(info.get("graph_ready")),
+        json_ready=bool(info.get("json_ready")),
     )
 
 
 @router.post("/{project_id}/chat", response_model=ChatResponse)
 async def project_chat(project_id: str, body: ChatRequest):
+    job = await project_jobs.get_job(project_id)
+    graph_ready = bool(job.get("graph_ready"))
+    if not graph_ready:
+        proc = project_jobs.processed_json_path(project_id)
+        if proc.exists():
+            graph_ready = True
+
     async with get_session() as session:
         project = await get_project(project_id, session)
-    if project is None:
+    if not graph_ready and project is None:
         raise HTTPException(
             status_code=404,
-            detail="Project not processed yet — wait for pipeline completion.",
+            detail="Knowledge graph not ready yet — wait for Neo4j ingest.",
         )
 
     parts: list[str] = []
@@ -192,6 +263,17 @@ async def project_chat(project_id: str, body: ChatRequest):
     )
 
 
+@router.get("/{project_id}/ifc")
+async def download_ifc(project_id: str):
+    """Stream uploaded IFC for immediate in-browser rendering."""
+    path = _find_uploaded_file(project_id)
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=path.name,
+    )
+
+
 @router.get("/{project_id}/model")
 async def project_model(project_id: str):
     """Return processed BuildingModel JSON (metadata graph)."""
@@ -205,12 +287,48 @@ async def project_model(project_id: str):
         raise HTTPException(status_code=500, detail="Stored model JSON is invalid.") from exc
 
 
-@router.get("/{project_id}/ifc")
-async def download_ifc(project_id: str):
-    """Stream original IFC file for in-browser viewers."""
-    path = _find_uploaded_file(project_id)
+@router.get("/{project_id}/glb")
+async def download_glb(project_id: str):
+    """Stream tessellated GLB for in-browser 3D viewer."""
+    path = processed_glb_path(project_id)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="GLB not available yet — wait for pipeline completion.",
+        )
     return FileResponse(
         path,
-        media_type="application/octet-stream",
-        filename=path.name,
+        media_type="model/gltf-binary",
+        filename=f"{project_id}.glb",
     )
+
+
+@router.post("/{project_id}/voice/token", response_model=VoiceTokenResponse)
+async def voice_token(project_id: str):
+    """Mint a LiveKit room token scoped to this project's voice session."""
+    if not settings.livekit_url or not settings.livekit_api_key or not settings.livekit_api_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="LiveKit is not configured (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET).",
+        )
+
+    async with get_session() as session:
+        project = await get_project(project_id, session)
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge graph not ready yet — wait for Neo4j ingest.",
+        )
+
+    from livekit import api as lk_api
+
+    room_name = f"bim-{project_id}"
+    token = (
+        lk_api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
+        .with_identity(f"user-{uuid.uuid4().hex[:10]}")
+        .with_name("BIM User")
+        .with_grants(lk_api.VideoGrants(room_join=True, room=room_name))
+        .with_metadata(json.dumps({"project_id": project_id}))
+        .to_jwt()
+    )
+    return VoiceTokenResponse(token=token, url=settings.livekit_url, room_name=room_name)

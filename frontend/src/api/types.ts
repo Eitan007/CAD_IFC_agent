@@ -1,7 +1,9 @@
 export type PipelineStatus =
   | "idle"
+  | "received"
   | "queued"
   | "processing"
+  | "graph_ready"
   | "completed"
   | "failed";
 
@@ -10,6 +12,8 @@ export type PipelineStatusPayload = {
   project_id: string;
   element_count?: number | null;
   error?: string | null;
+  graph_ready?: boolean;
+  json_ready?: boolean;
 };
 
 export type BuildingModelJson = {

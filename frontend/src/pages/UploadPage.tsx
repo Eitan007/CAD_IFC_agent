@@ -1,22 +1,30 @@
-import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { useCallback, useState } from "react";
-import { uploadIfc } from "../api/client";
+import { useNavigate } from "react-router-dom";
+import { useProjectSessionStore } from "../stores/projectSessionStore";
+
+function UploadIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function UploadPage() {
   const navigate = useNavigate();
+  const setLocalIfc = useProjectSessionStore((s) => s.setLocalIfc);
   const [drag, setDrag] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: (file: File) => uploadIfc(file),
-    onSuccess: (data) => {
-      navigate(`/project/${encodeURIComponent(data.project_id)}`, { replace: true });
-    },
-  });
+  const [opening, setOpening] = useState(false);
 
   const onFiles = useCallback(
-    (files: FileList | null) => {
+    async (files: FileList | null) => {
       const file = files?.[0];
       if (!file) return;
 
@@ -27,59 +35,70 @@ export function UploadPage() {
         return;
       }
 
-      mutation.mutate(file);
+      setOpening(true);
+      try {
+        const projectId = crypto.randomUUID();
+        await setLocalIfc(projectId, file);
+        navigate(`/project/${encodeURIComponent(projectId)}`, { replace: true });
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : String(err));
+        setOpening(false);
+      }
     },
-    [mutation],
+    [navigate, setLocalIfc],
   );
 
+  const busy = opening;
+
   return (
-    <div className="upload-shell">
-      <div className="glass-panel upload-card">
-        <div style={{ fontSize: "1.35rem", fontWeight: 800 }}>CAD / IFC workspace</div>
-        <p className="muted" style={{ marginTop: "0.35rem", lineHeight: 1.55 }}>
-          Upload a building IFC model. You’ll land in a split workspace with an interactive viewer and an LLM chat
-          wired to your processed graph.
+    <div className="upload-page">
+      <label
+        className={`glass-card upload-glass-card ${drag ? "upload-glass-card--drag" : ""} ${busy ? "upload-glass-card--busy" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!busy) setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          if (!busy) void onFiles(e.dataTransfer.files);
+        }}
+      >
+        <input
+          type="file"
+          accept=".ifc"
+          className="upload-glass-card-input"
+          disabled={busy}
+          onChange={(e) => void onFiles(e.target.files)}
+        />
+
+        <div className="upload-glass-card-header">
+          <span className="upload-glass-card-badge">
+            <UploadIcon />
+          </span>
+          <span className="upload-glass-card-label">Upload Files</span>
+        </div>
+
+        <h1 className="upload-glass-card-title">
+          {busy ? "Opening workspace…" : "Drag and drop your IFC file here, or click to browse."}
+        </h1>
+
+        <p className="upload-glass-card-hint muted">
+          Building models only • .ifc • max ~500 MB • preview starts instantly, syncs in background
         </p>
 
-        <div
-          className={`dropzone ${drag ? "drag" : ""}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDrag(false);
-            onFiles(e.dataTransfer.files);
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>Drop a .ifc file here</div>
-          <div className="muted" style={{ marginTop: "0.35rem" }}>
-            Max ~500 MB • Files upload to{" "}
-            <code style={{ color: "var(--accent-hover)" }}>/api/projects/upload</code>
-          </div>
-
-          <div style={{ marginTop: "1rem" }}>
-            <label className="btn-primary" style={{ display: "inline-block" }}>
-              Choose file
-              <input type="file" accept=".ifc" style={{ display: "none" }} onChange={(e) => onFiles(e.target.files)} />
-            </label>
-          </div>
-
-          {mutation.isPending && <div className="muted" style={{ marginTop: "0.85rem" }}>Uploading…</div>}
-          {localError && (
-            <div style={{ marginTop: "0.85rem", color: "#ffb4b4" }}>
-              {localError}
-            </div>
-          )}
-          {mutation.isError && (
-            <div style={{ marginTop: "0.85rem", color: "#ffb4b4" }}>
-              {(mutation.error as Error).message}
-            </div>
-          )}
+        <div className="upload-glass-card-actions">
+          <span className="upload-action-btn" role="presentation">
+            <UploadIcon />
+            <span>{busy ? "Opening…" : "Choose file"}</span>
+          </span>
         </div>
-      </div>
+
+        {localError && <p className="upload-glass-card-error">{localError}</p>}
+
+        <div className="glass-card-dots" aria-hidden="true" />
+      </label>
     </div>
   );
 }

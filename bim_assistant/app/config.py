@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     api_port: int = 8000
     secret_key: str = "change_me_in_production"
 
+    # LiveKit (voice sessions)
+    livekit_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

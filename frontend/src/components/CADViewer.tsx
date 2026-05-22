@@ -3,36 +3,57 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 import { fetchIfcBuffer } from "../api/client";
+import { useProjectSessionStore } from "../stores/projectSessionStore";
 import { useUiStore } from "../stores/uiStore";
 
-/** web-ifc only prefixes `.wasm` with wasmPath; pthread worker URLs use IFC fetch dirname → breaks when IFC is `/api/.../ifc`. */
-function makeIfcLocateFile(wasmAssetsRoot: string) {
-  return (path: string, prefix: string): string => {
-    const name = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
-    if (name.endsWith(".wasm") || name.endsWith(".worker.js")) {
-      return wasmAssetsRoot + name;
-    }
-    return prefix + path;
-  };
-}
+const WASM_PATH = `${import.meta.env.BASE_URL}wasm/`;
 
 function extractExpressId(hit: THREE.Intersection): string | null {
-  const mesh = hit.object as THREE.Mesh;
-  const geo = mesh.geometry as THREE.BufferGeometry & { expressID?: number };
-  if (typeof geo?.expressID === "number") return String(geo.expressID);
+  const mesh = hit.object as THREE.Mesh & { modelID?: number };
+  const faceIndex = hit.faceIndex;
+  if (mesh.modelID != null && faceIndex != null && mesh.geometry) {
+    const geo = mesh.geometry as THREE.BufferGeometry & {
+      attributes: { expressID?: THREE.BufferAttribute };
+    };
+    const exp = geo.attributes.expressID;
+    if (exp) {
+      const id = exp.getX(faceIndex);
+      if (id) return String(id);
+    }
+  }
 
   let obj: THREE.Object3D | null = hit.object;
   while (obj) {
-    const tagged = obj as unknown as { expressID?: number };
+    const name = obj.name?.trim();
+    if (name && /^\d+$/.test(name)) return name;
+    const tagged = obj as THREE.Object3D & { expressID?: number };
     if (typeof tagged.expressID === "number") return String(tagged.expressID);
     obj = obj.parent;
   }
   return null;
 }
 
+function fitCameraToModel(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  root: THREE.Object3D,
+) {
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z) || 10;
+
+  controls.target.copy(center);
+  camera.position.copy(center.clone().add(new THREE.Vector3(radius * 1.4, radius * 1.1, radius * 1.4)));
+  camera.near = Math.max(0.01, radius / 500);
+  camera.far = radius * 500;
+  camera.updateProjectionMatrix();
+}
+
 export function CADViewer({ projectId }: { projectId: string }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const setSelectedElementId = useUiStore((s) => s.setSelectedElementId);
+  const localBuffer = useProjectSessionStore((s) => s.localIfcBuffers[projectId]);
 
   const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -46,11 +67,12 @@ export function CADViewer({ projectId }: { projectId: string }) {
     let raf = 0;
     let renderer: THREE.WebGLRenderer | null = null;
     let controls: OrbitControls | null = null;
-    let loader: IFCLoader | null = null;
-    let ifcRoot: THREE.Object3D | null = null;
+    let modelRoot: THREE.Object3D | null = null;
+    let ifcLoader: IFCLoader | null = null;
+    let ifcModelId: number | null = null;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x031536);
+    scene.background = new THREE.Color(0x030a18);
 
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
     camera.position.set(18, 14, 22);
@@ -74,12 +96,12 @@ export function CADViewer({ projectId }: { projectId: string }) {
     };
 
     const pick = (ev: PointerEvent) => {
-      if (!renderer || cancelled || !ifcRoot) return;
+      if (!renderer || cancelled || !modelRoot) return;
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hits = raycaster.intersectObjects(ifcRoot.children, true);
+      const hits = raycaster.intersectObject(modelRoot, true);
       if (!hits.length) {
         setSelectedElementId(null);
         return;
@@ -89,9 +111,7 @@ export function CADViewer({ projectId }: { projectId: string }) {
     };
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    // three r149 uses outputEncoding + sRGBEncoding (outputColorSpace / SRGBColorSpace arrived in r152)
-    (renderer as unknown as { outputEncoding: number }).outputEncoding =
-      (THREE as unknown as { sRGBEncoding: number }).sRGBEncoding;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
     mount.replaceChildren(renderer.domElement);
@@ -110,94 +130,79 @@ export function CADViewer({ projectId }: { projectId: string }) {
       raf = requestAnimationFrame(loop);
     };
 
-    void (async () => {
-      try {
-        setPhase("loading");
-        setLoadPct(0);
-        setErrorText(null);
+    const loadIfc = async () => {
+      setPhase("loading");
+      setLoadPct(0);
+      setErrorText(null);
 
-        loader = new IFCLoader();
-        const base =
-          import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
-        const wasmAssetsRoot = `${window.location.origin}${base}web-ifc/`;
-        await loader.ifcManager.setWasmPath(`${base}web-ifc/`);
-
-        const api = loader.ifcManager.ifcAPI;
-        if (!api.wasmModule) {
-          await (
-            api.Init as unknown as (locate?: (path: string, prefix: string) => string) => Promise<void>
-          )(makeIfcLocateFile(wasmAssetsRoot));
+      let simulatedPct = 0;
+      const ticker = setInterval(() => {
+        if (cancelled) {
+          clearInterval(ticker);
+          return;
         }
+        simulatedPct = Math.min(simulatedPct + (92 - simulatedPct) * 0.07, 92);
+        setLoadPct(Math.round(simulatedPct));
+      }, 280);
 
-        // Simulate smooth progress since web-ifc doesn't expose byte-level progress
-        let simulatedPct = 0;
-        const ticker = setInterval(() => {
-          if (cancelled) { clearInterval(ticker); return; }
-          simulatedPct = Math.min(simulatedPct + (95 - simulatedPct) * 0.06, 94);
-          setLoadPct(Math.round(simulatedPct));
-        }, 300);
-
-        // Fetch via fetch() so we can send the ngrok-skip-browser-warning header,
-        // then parse the buffer directly — avoids the CORS issue with plain URL loads.
-        const buffer = await fetchIfcBuffer(projectId);
-        const model = await (
-          loader as unknown as { parse: (buffer: ArrayBuffer) => Promise<THREE.Object3D> }
-        ).parse(buffer);
-        clearInterval(ticker);
-        if (cancelled) return;
-
-        setLoadPct(100);
-        ifcRoot = model;
-
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const radius = Math.max(size.x, size.y, size.z) || 10;
-
-        controls!.target.copy(center);
-        camera.position.copy(center.clone().add(new THREE.Vector3(radius * 1.4, radius * 1.1, radius * 1.4)));
-        camera.near = Math.max(0.01, radius / 500);
-        camera.far = radius * 500;
-        camera.updateProjectionMatrix();
-
-        scene.add(model);
-
-        renderer!.domElement.style.cursor = "pointer";
-        renderer!.domElement.addEventListener("pointerdown", pick);
-
-        loop();
-        setPhase("ready");
-      } catch (err) {
-        if (!cancelled) {
-          setPhase("error");
-          setErrorText(err instanceof Error ? err.message : String(err));
-        }
+      let buffer = localBuffer;
+      if (!buffer) {
+        buffer = await fetchIfcBuffer(projectId);
       }
-    })();
+      if (cancelled) return;
+
+      ifcLoader = new IFCLoader();
+      await ifcLoader.ifcManager.setWasmPath(WASM_PATH);
+      await ifcLoader.ifcManager.applyWebIfcConfig({
+        USE_FAST_BOOLS: true,
+        COORDINATE_TO_ORIGIN: true,
+      });
+      if (cancelled) return;
+
+      const model = await ifcLoader.parse(buffer.slice(0));
+      clearInterval(ticker);
+      if (cancelled) return;
+
+      ifcModelId = model.modelID;
+      modelRoot = model;
+      scene.add(model);
+
+      fitCameraToModel(camera, controls!, modelRoot);
+
+      renderer!.domElement.style.cursor = "pointer";
+      renderer!.domElement.addEventListener("pointerdown", pick);
+
+      setLoadPct(100);
+      loop();
+      setPhase("ready");
+    };
+
+    void loadIfc().catch((err) => {
+      if (!cancelled) {
+        setPhase("error");
+        setErrorText(err instanceof Error ? err.message : String(err));
+      }
+    });
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
-
       try {
         renderer?.domElement.removeEventListener("pointerdown", pick);
       } catch {
         /* noop */
       }
-
-      controls?.dispose();
-
-      try {
-        const mgr = loader?.ifcManager as unknown as { dispose?: () => void } | undefined;
-        mgr?.dispose?.();
-      } catch {
-        /* noop */
+      if (ifcLoader && ifcModelId != null) {
+        try {
+          ifcLoader.ifcManager.close(ifcModelId);
+        } catch {
+          /* noop */
+        }
       }
-
+      controls?.dispose();
       renderer?.dispose();
       mount.replaceChildren();
-
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose();
@@ -207,17 +212,15 @@ export function CADViewer({ projectId }: { projectId: string }) {
         else mat.dispose();
       });
     };
-  }, [projectId, setSelectedElementId]);
+  }, [projectId, localBuffer, setSelectedElementId]);
 
   return (
-    <div className="glass-panel viewer-pane" style={{ position: "relative", height: "100%" }}>
+    <div className="viewer-pane" style={{ position: "relative", height: "100%" }}>
       <div ref={mountRef} className="viewer-frame" />
 
       {phase === "loading" && (
         <>
-          {/* Shimmer sweep across the whole viewer */}
           <div className="viewer-shimmer" aria-hidden="true" />
-          {/* Percentage badge */}
           <div className="viewer-overlay">
             <div className="viewer-overlay-inner">
               <div className="viewer-progress-label">{loadPct}%</div>
@@ -225,7 +228,7 @@ export function CADViewer({ projectId }: { projectId: string }) {
                 <div className="viewer-progress-fill" style={{ width: `${loadPct}%` }} />
               </div>
               <div className="muted" style={{ textAlign: "center", fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                Parsing IFC geometry…
+                {localBuffer ? "Loading local IFC…" : "Loading IFC model…"}
               </div>
             </div>
           </div>
@@ -235,10 +238,8 @@ export function CADViewer({ projectId }: { projectId: string }) {
       {phase === "error" && (
         <div className="viewer-overlay">
           <div className="viewer-overlay-inner muted">
-            Viewer could not render this IFC in-browser (file size or WASM mismatch).
-            <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>
-              {errorText}
-            </div>
+            Viewer could not load the IFC model.
+            <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>{errorText}</div>
           </div>
         </div>
       )}

@@ -7,22 +7,25 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "copy-ifc-wasm": "node scripts/copy-ifc-wasm.mjs",
-    "postinstall": "node scripts/copy-ifc-wasm.mjs"
+    "postinstall": "node scripts/copy-webifc-wasm.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.11",
+    "livekit-client": "^2.9.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.1",
-    "three": "0.149.0",
+    "remark-gfm": "^4.0.1",
+    "three": "0.152.2",
+    "web-ifc": "0.0.39",
     "web-ifc-three": "^0.0.126",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@types/three": "0.149.0",
+    "@types/three": "0.152.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.7.2",
     "vite": "^6.0.7"

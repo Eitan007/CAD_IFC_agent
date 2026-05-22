@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { sendChat } from "../api/client";
 import type { ChatReference } from "../api/types";
 import { useUiStore } from "../stores/uiStore";
+import { ChatMarkdown } from "./ChatMarkdown";
 
 type Msg = {
   role: "user" | "assistant";
@@ -13,9 +14,11 @@ type Msg = {
 type Props = {
   projectId: string;
   chatEnabled: boolean;
+  /** When true, omit outer glass shell (used inside AgentPanel). */
+  embedded?: boolean;
 };
 
-export function ChatPanel({ projectId, chatEnabled }: Props) {
+export function ChatPanel({ projectId, chatEnabled, embedded = false }: Props) {
   const selectedElementId = useUiStore((s) => s.selectedElementId);
   const storeyFilter = useUiStore((s) => s.storeyFilter);
   const typeFilter = useUiStore((s) => s.typeFilter);
@@ -76,8 +79,10 @@ export function ChatPanel({ projectId, chatEnabled }: Props) {
     mutation.mutate({ text: trimmed });
   };
 
+  const shellClass = embedded ? "chat-pane-embedded" : "glass-panel chat-pane";
+
   return (
-    <section className="glass-panel chat-pane" style={{ minHeight: 0 }}>
+    <section className={shellClass} style={{ minHeight: 0, flex: 1, display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "0.65rem 0.75rem", borderBottom: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}>
         <div style={{ fontWeight: 700 }}>Knowledge graph QA</div>
         <div className="muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
@@ -94,7 +99,11 @@ export function ChatPanel({ projectId, chatEnabled }: Props) {
         {messages.map((m, idx) => (
           <div key={`${idx}-${m.role}`} className="chat-row">
             <div className={m.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"}>
-              {m.text}
+              {m.role === "assistant" ? (
+                <ChatMarkdown text={m.text} />
+              ) : (
+                m.text
+              )}
               {!!m.refs?.length && (
                 <div style={{ marginTop: "0.55rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
                   {m.refs.map((r, i) => (

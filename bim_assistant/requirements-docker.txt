@@ -6,6 +6,9 @@ pydantic==2.7.1
 pydantic-settings==2.2.1
 
 ifcopenshell==0.7.10
+trimesh==4.4.3
+numpy>=1.26.0
+livekit-api>=0.8.0
 
 sqlalchemy==2.0.30
 asyncpg==0.29.0
