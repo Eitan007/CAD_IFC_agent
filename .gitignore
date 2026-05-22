@@ -4,7 +4,11 @@ bim_assistant/.env.*
 !bim_assistant/.env.example
 frontend/.env
 frontend/.env.*
+livekit-voice-agent/.env
+livekit-voice-agent/.env.*
 !frontend/.env.example
+
+
 # Frontend (Vite / npm)
 frontend/node_modules/1
 frontend/dist/
@@ -19,6 +23,7 @@ frontend/.vite/
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
+ignore_this.md
 
 # Runtime uploads & outputs (Docker / local API)
 bim_assistant/data/uploads/
@@ -30,7 +35,10 @@ bim_assistant/data/chroma/
 *.swp
 .DS_Store
 Thumbs.db
-
+livekit-voice-agent/.venv
+livekit-voice-agent/.env
+livekit-voice-agent/.env.*
+!livekit-voice-agent/KMS
 
 # frontend
 node_modules

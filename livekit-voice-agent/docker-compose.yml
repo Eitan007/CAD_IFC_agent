@@ -1,0 +1,10 @@
+# Standalone voice worker (API expected at BIM_API_BASE, default host Docker gateway)
+services:
+  voice-agent:
+    build: .
+    env_file: .env
+    environment:
+      BIM_API_BASE: ${BIM_API_BASE:-http://host.docker.internal:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
