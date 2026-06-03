@@ -22,7 +22,7 @@ function combinedAudioLevel(room: Room | null): number {
   return peak;
 }
 
-function buildPath(amplitude: number, phase: number): string {
+function buildPath(amplitude: number, phase: number, frequencyData: Uint8Array | null): string {
   const cx = W / 2;
   const steps = 64;
   const pts: string[] = [];
@@ -35,41 +35,105 @@ function buildPath(amplitude: number, phase: number): string {
     const leftBump =
       0.28 *
       Math.exp(-Math.pow((x - cx * 0.62) / (W * 0.14), 2));
-    const y = BASELINE - amplitude * (main * (1 + flow) + leftBump);
+    
+    // Multi-point reactivity: add hash-based noise at different positions
+    const posHash = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+    const posNoise = (posHash - Math.floor(posHash)) - 0.5;
+    let reactivePoint = 0.18 * posNoise * Math.sin(phase + i * 0.8) * main;
+    
+    // Add frequency-based reactivity: map frequency bins to string positions
+    if (frequencyData) {
+      const freqBin = Math.floor((i / steps) * frequencyData.length);
+      const clipped = Math.max(0, Math.min(frequencyData.length - 1, freqBin));
+      const freqReactivity = (frequencyData[clipped] / 255) * 0.3;
+      reactivePoint += freqReactivity * main;
+    }
+    
+    const y = BASELINE - amplitude * (main * (1 + flow) + leftBump + reactivePoint);
     pts.push(i === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : `L ${x.toFixed(1)} ${y.toFixed(1)}`);
   }
   return pts.join(" ");
 }
 
-function peakPoint(amplitude: number): { x: number; y: number } {
-  return { x: W / 2, y: BASELINE - amplitude };
-}
-
 export function VoiceStringVisualizer({ room, active, variant = "card" }: Props) {
   const pathRef = useRef<SVGPathElement>(null);
-  const beadRef = useRef<SVGCircleElement>(null);
   const glowPathRef = useRef<SVGPathElement>(null);
   const smoothRef = useRef(0);
   const phaseRef = useRef(0);
   const rafRef = useRef(0);
+  
+  // Audio analysis for frequency-based reactivity
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const freqDataRef = useRef<Uint8Array | null>(null);
+
+  // Setup Web Audio API when audio element becomes available
+  useEffect(() => {
+    if (!active) return;
+    
+    const audioEl = document.querySelector("#bim-agent-audio") as HTMLAudioElement;
+    if (!audioEl) return;
+    
+    try {
+      const audioCtx = audioContextRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioCtx;
+      
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+      
+      if (!analyserRef.current) {
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.8;
+        
+        try {
+          if (audioEl.srcObject instanceof MediaStream) {
+            const source = audioCtx.createMediaStreamSource(audioEl.srcObject);
+            source.connect(analyser);
+            // We don't connect to destination because the audioEl is already playing the stream.
+            // This also avoids the "Applying volume or mute status is not supported" warning.
+          } else {
+            const source = audioCtx.createMediaElementSource(audioEl);
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+          }
+        } catch (e) {
+          // Source already created or not available
+        }
+        
+        analyserRef.current = analyser;
+        freqDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+      }
+    } catch (err) {
+      console.error("Audio context setup failed:", err);
+    }
+    
+    return () => {
+      // Keep context alive for reconnects
+    };
+  }, [active]);
 
   useEffect(() => {
     const tick = (t: number) => {
       const raw = active ? combinedAudioLevel(room) : 0;
       const idle = active ? 0 : 0.04 + 0.03 * Math.sin(t * 0.0012);
       const target = active ? Math.max(raw, 0.02) : idle;
-      smoothRef.current += (target - smoothRef.current) * 0.18;
+      smoothRef.current += (target - smoothRef.current) * 0.29;
 
-      phaseRef.current += active ? 0.045 + smoothRef.current * 0.08 : 0.018;
+      phaseRef.current += active ? 0.072 + smoothRef.current * 0.128 : 0.018;
       const amp =
         MIN_AMP + smoothRef.current * (MAX_AMP - MIN_AMP);
-      const d = buildPath(amp, phaseRef.current);
-      const peak = peakPoint(amp);
+      
+      // Get frequency data if analyser is available
+      if (analyserRef.current && freqDataRef.current && active) {
+        analyserRef.current.getByteFrequencyData(freqDataRef.current);
+      }
+      
+      const d = buildPath(amp, phaseRef.current, freqDataRef.current);
 
       pathRef.current?.setAttribute("d", d);
       glowPathRef.current?.setAttribute("d", d);
-      beadRef.current?.setAttribute("cx", String(peak.x));
-      beadRef.current?.setAttribute("cy", String(peak.y));
 
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -106,33 +170,18 @@ export function VoiceStringVisualizer({ room, active, variant = "card" }: Props)
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          <filter id="voiceBeadGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="5" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
         </defs>
         <path
           ref={glowPathRef}
           className="voice-string-glow"
           fill="none"
-          d={buildPath(MIN_AMP, 0)}
+          d={buildPath(MIN_AMP, 0, null)}
         />
         <path
           ref={pathRef}
           className="voice-string-line"
           fill="none"
-          d={buildPath(MIN_AMP, 0)}
-        />
-        <circle
-          ref={beadRef}
-          className="voice-string-bead"
-          cx={W / 2}
-          cy={BASELINE - MIN_AMP}
-          r="5"
-          filter="url(#voiceBeadGlow)"
+          d={buildPath(MIN_AMP, 0, null)}
         />
       </svg>
     </div>

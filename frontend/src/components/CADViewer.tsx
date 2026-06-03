@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 import { fetchIfcBuffer } from "../api/client";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
 import { useUiStore } from "../stores/uiStore";
+import { entranceTransition, softItem } from "../utils/motion";
 
 const WASM_PATH = `${import.meta.env.BASE_URL}wasm/`;
 
@@ -177,15 +179,21 @@ export function CADViewer({ projectId }: { projectId: string }) {
       setPhase("ready");
     };
 
-    void loadIfc().catch((err) => {
+    // Delay IFC load until slide animation completes (0.9s) to avoid compute contention
+    const timer = setTimeout(() => {
       if (!cancelled) {
-        setPhase("error");
-        setErrorText(err instanceof Error ? err.message : String(err));
+        void loadIfc().catch((err) => {
+          if (!cancelled) {
+            setPhase("error");
+            setErrorText(err instanceof Error ? err.message : String(err));
+          }
+        });
       }
-    });
+    }, 950);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       cancelAnimationFrame(raf);
       ro.disconnect();
       try {
@@ -218,31 +226,35 @@ export function CADViewer({ projectId }: { projectId: string }) {
     <div className="viewer-pane" style={{ position: "relative", height: "100%" }}>
       <div ref={mountRef} className="viewer-frame" />
 
-      {phase === "loading" && (
-        <>
-          <div className="viewer-shimmer" aria-hidden="true" />
-          <div className="viewer-overlay">
-            <div className="viewer-overlay-inner">
-              <div className="viewer-progress-label">{loadPct}%</div>
-              <div className="viewer-progress-track">
-                <div className="viewer-progress-fill" style={{ width: `${loadPct}%` }} />
+      <AnimatePresence>
+        {phase === "loading" && (
+          <>
+            <motion.div className="viewer-shimmer" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={entranceTransition} />
+            <motion.div className="viewer-overlay" initial="hidden" animate="show" exit="exit" variants={softItem} transition={entranceTransition}>
+              <div className="viewer-overlay-inner">
+                <div className="viewer-progress-label">{loadPct}%</div>
+                <div className="viewer-progress-track">
+                  <div className="viewer-progress-fill" style={{ width: `${loadPct}%` }} />
+                </div>
+                <div className="muted" style={{ textAlign: "center", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+                  {localBuffer ? "Loading local IFC…" : "Loading IFC model…"}
+                </div>
               </div>
-              <div className="muted" style={{ textAlign: "center", fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                {localBuffer ? "Loading local IFC…" : "Loading IFC model…"}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-      {phase === "error" && (
-        <div className="viewer-overlay">
-          <div className="viewer-overlay-inner muted">
-            Viewer could not load the IFC model.
-            <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>{errorText}</div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {phase === "error" && (
+          <motion.div className="viewer-overlay" initial="hidden" animate="show" exit="exit" variants={softItem} transition={entranceTransition}>
+            <div className="viewer-overlay-inner muted">
+              Viewer could not load the IFC model.
+              <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>{errorText}</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -44,6 +44,7 @@ export BIM_API_BASE=http://127.0.0.1:8000
 # LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET from .env (load_dotenv in agent.py)
 
 python agent.py dev
+# or un run agent.py dev
 ```
 
 ## 3. Frontend (terminal 3)

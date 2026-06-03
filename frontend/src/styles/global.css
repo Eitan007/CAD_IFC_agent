@@ -65,7 +65,7 @@ body {
   display: flex;
   width: 200%;
   height: 100%;
-  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.9s ease-in-out;
   will-change: transform;
 }
 
@@ -79,11 +79,27 @@ body {
   flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
+  transition: opacity 0.9s ease-in-out;
+}
+
+.app-slide-upload {
+  opacity: 1;
+}
+
+.app-slider.to-workspace .app-slide-upload {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app-slide-workspace {
   display: flex;
   flex-direction: column;
+  opacity: 0;
+}
+
+.app-slider.to-workspace .app-slide-workspace {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Shared glass card (upload + conversation + composer) */
@@ -142,7 +158,7 @@ textarea {
   color: var(--text);
   padding: 0.65rem 1.15rem;
   font-weight: 600;
-  transition: transform 0.08s ease, filter 0.15s ease;
+  transition: all 0.3s ease;
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -150,7 +166,7 @@ textarea {
 }
 
 .btn-primary:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: scale(0.98);
 }
 
 .btn-primary:disabled {
@@ -194,9 +210,9 @@ textarea {
   cursor: pointer;
   text-align: left;
   transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.15s ease;
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
 }
 
 .upload-glass-card:hover:not(.upload-glass-card--busy) {
@@ -285,7 +301,7 @@ textarea {
   color: #050a18;
   background: #ffffff;
   box-shadow: 0 8px 28px rgba(255, 255, 255, 0.12);
-  transition: transform 0.12s ease, box-shadow 0.15s ease;
+  transition: all 0.3s ease;
 }
 
 .upload-glass-card:hover:not(.upload-glass-card--busy) .upload-action-btn {
@@ -305,7 +321,7 @@ textarea {
   padding: 2.25rem;
   text-align: center;
   background: color-mix(in srgb, var(--panel-navy) 70%, transparent);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: all 0.3s ease;
 }
 
 .dropzone.drag {
@@ -591,7 +607,7 @@ textarea {
   border-radius: 10px;
   padding: 0.45rem 0.65rem;
   font-weight: 600;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.3s ease;
 }
 
 .agent-mode-tab.active {
@@ -748,7 +764,7 @@ textarea {
   color: #042f3a;
   background: linear-gradient(135deg, var(--cyan-glow), var(--cyan) 55%, #0891b2);
   box-shadow: 0 0 22px color-mix(in srgb, var(--cyan) 45%, transparent);
-  transition: transform 0.1s ease, filter 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.3s ease;
 }
 
 .btn-voice:hover:not(:disabled) {
@@ -771,21 +787,16 @@ textarea {
 .ws-root {
   --ws-glow: #4d9fff;
   --ws-glow-bright: #7ec8ff;
-  display: grid;
-  grid-template-rows: auto 1fr;
+  position: relative;
+  width: 100%;
   height: 100%;
   background: transparent;
   color: var(--text);
+  overflow: hidden;
 }
 
 .ws-header {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.65rem 1rem;
-  border-bottom: 1px solid color-mix(in srgb, #ffffff 10%, transparent);
-  background: color-mix(in srgb, #030a18 75%, transparent);
+  display: none;
 }
 
 .ws-upload-badge {
@@ -806,6 +817,10 @@ textarea {
 }
 
 .ws-menu-btn {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
   border: 0px solid color-mix(in srgb, var(--ws-glow) 35%, transparent);
   background: transparent;
   color: var(--ws-glow-bright);
@@ -814,7 +829,9 @@ textarea {
   height: 40px;
   display: grid;
   place-items: center;
-  transition: box-shadow 0.55s ease, border-color 0.55s ease;
+  transition: all 0.3s ease;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .ws-menu-btn:hover {
@@ -822,49 +839,36 @@ textarea {
 }
 
 .ws-title {
-  margin: 0;
-  text-align: center;
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  color: #e8f0ff;
+  display: none;
 }
 
 .ws-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  display: none;
 }
 
 .ws-stage {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr minmax(280px, 34%);
-  gap: 0.85rem;
-  padding: 0.85rem 0.85rem 0.5rem;
-  min-height: 0;
+  display: none;
 }
 
 @media (max-width: 900px) {
-  .ws-stage {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-  }
   .ws-conversation {
     max-height: 38vh;
   }
 }
 
 .ws-viewer-card {
-  position: relative;
-  min-height: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   border: none;
   background: transparent;
   box-shadow: none;
   overflow: hidden;
+  z-index: 0;
 }
 
 .ws-viewer-card .viewer-pane {
@@ -873,11 +877,45 @@ textarea {
 }
 
 .ws-conversation {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  width: 320px;
+  max-height: 70vh;
   border-radius: 22px;
   overflow: hidden;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+  transition: width 0.6s ease, height 0.6s ease, border-radius 0.6s ease;
+}
+
+/* Transparent gradient border effect - disabled for "completely transparent" look */
+.ws-conversation::after {
+  content: none;
+}
+
+/* When there are no messages, make it a small circle */
+.ws-conversation.no-messages {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+
+.ws-conversation.no-messages .ws-conversation-scroll,
+.ws-conversation.no-messages .ws-conversation-fade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ws-conversation::before {
+  content: none;
 }
 
 .ws-conversation-scroll {
@@ -887,31 +925,24 @@ textarea {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  padding: 2.25rem 1rem 2rem;
+  padding: 0.45rem 0.4rem 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.4rem;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, #ffffff 18%, transparent) transparent;
 }
 
 .ws-conversation-fade {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 56px;
-  z-index: 4;
-  pointer-events: none;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  display: none;
 }
 
 .ws-conversation-fade-top {
   top: 0;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, #0a1428 92%, transparent) 0%,
-    color-mix(in srgb, #0a1428 40%, transparent) 55%,
+    var(--bg-deep) 0%,
+    color-mix(in srgb, var(--bg-deep) 40%, transparent) 55%,
     transparent 100%
   );
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 35%, transparent 100%);
@@ -922,8 +953,8 @@ textarea {
   bottom: 0;
   background: linear-gradient(
     to top,
-    color-mix(in srgb, #0a1428 92%, transparent) 0%,
-    color-mix(in srgb, #0a1428 40%, transparent) 55%,
+    var(--bg-deep) 0%,
+    color-mix(in srgb, var(--bg-deep) 40%, transparent) 55%,
     transparent 100%
   );
   -webkit-mask-image: linear-gradient(to top, #000 0%, #000 35%, transparent 100%);
@@ -934,7 +965,6 @@ textarea {
   display: flex;
   width: 100%;
   min-width: 0;
-  animation: ws-bubble-in 0.65s ease both;
 }
 
 .ws-bubble-row-user {
@@ -945,34 +975,25 @@ textarea {
   justify-content: flex-start;
 }
 
-@keyframes ws-bubble-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .ws-bubble {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  max-width: min(100%, 26rem);
+  gap: 0.22rem;
+  max-width: min(100%, 21rem);
   width: fit-content;
-  min-width: 3.5rem;
-  padding: 0.7rem 1rem;
+  min-width: 2.5rem;
+  padding: 0.42rem 0.58rem;
   transition: box-shadow 0.55s ease;
 }
 
 .ws-bubble-row-user .ws-bubble {
   margin-left: auto;
+  margin-right: 0;
   border-radius: 18px 18px 6px 18px;
 }
 
 .ws-bubble-row-ai .ws-bubble {
+  margin-left: 0;
   border-radius: 18px 18px 18px 6px;
 }
 
@@ -983,14 +1004,22 @@ textarea {
 }
 
 .ws-bubble-user {
-  border: 1px solid color-mix(in srgb, #ffffff 18%, transparent);
-  background: color-mix(in srgb, #ffffff 8%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 30%, transparent);
+  background: linear-gradient(135deg, #87ceeb 0%, #add8e6 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ws-bubble-row-user .ws-bubble-text {
+  color: #031536;
+}
+
+.ws-bubble-row-user .ws-bubble-tag {
+  color: color-mix(in srgb, #031536 70%, transparent);
 }
 
 .ws-bubble-tag {
   flex-shrink: 0;
-  font-size: 0.62rem;
+  font-size: 0.5rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: color-mix(in srgb, var(--soft-blue) 95%, #8ba1c1);
@@ -1003,8 +1032,8 @@ textarea {
 
 .ws-bubble-text {
   margin: 0;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.66rem;
+  line-height: 1.42;
   overflow-wrap: anywhere;
   word-break: break-word;
   color: #ffffff;
@@ -1028,7 +1057,7 @@ textarea {
 }
 
 .chat-markdown p {
-  margin: 0.45em 0;
+  margin: 0.25em 0;
 }
 
 .chat-markdown p:first-child {
@@ -1037,12 +1066,12 @@ textarea {
 
 .chat-markdown ul,
 .chat-markdown ol {
-  margin: 0.4em 0;
-  padding-left: 1.25em;
+  margin: 0.28em 0;
+  padding-left: 1em;
 }
 
 .chat-markdown li {
-  margin: 0.2em 0;
+  margin: 0.12em 0;
 }
 
 .chat-markdown li > p {
@@ -1063,8 +1092,8 @@ textarea {
 }
 
 .chat-markdown pre {
-  margin: 0.5em 0;
-  padding: 0.55rem 0.65rem;
+  margin: 0.32em 0;
+  padding: 0.42rem 0.5rem;
   border-radius: 8px;
   overflow-x: auto;
   background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
@@ -1080,8 +1109,8 @@ textarea {
 .chat-markdown h1,
 .chat-markdown h2,
 .chat-markdown h3 {
-  margin: 0.55em 0 0.35em;
-  font-size: 1em;
+  margin: 0.38em 0 0.22em;
+  font-size: 0.92em;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -1093,7 +1122,7 @@ textarea {
 }
 
 .chat-bubble-assistant .chat-markdown {
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   line-height: 1.5;
   color: var(--text);
 }
@@ -1101,13 +1130,13 @@ textarea {
 .ws-bubble-refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.35rem;
+  gap: 0.22rem;
+  margin-top: 0.22rem;
 }
 
 .ws-ref-pill {
-  font-size: 0.68rem;
-  padding: 0.15rem 0.4rem;
+  font-size: 0.58rem;
+  padding: 0.1rem 0.32rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--ws-glow) 35%, transparent);
   color: var(--soft-blue);
@@ -1120,8 +1149,8 @@ textarea {
   background: rgba(2, 8, 20, 0.55);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.65s ease;
-  z-index: 40;
+  transition: opacity 0.5s ease-in-out;
+  z-index: 999;
 }
 
 .ws-sidebar-backdrop.open {
@@ -1135,19 +1164,21 @@ textarea {
   left: 0;
   bottom: 0;
   width: min(300px, 88vw);
-  z-index: 50;
+  z-index: 1000;
   background: color-mix(in srgb, #0a1830 94%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--ws-glow) 30%, transparent);
   box-shadow: 8px 0 40px rgba(0, 0, 0, 0.45);
   transform: translateX(-100%);
-  transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.5s ease-out, opacity 0.5s ease-out;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .ws-sidebar.open {
   transform: translateX(0);
+  pointer-events: auto;
 }
 
 .ws-sidebar-head {
@@ -1248,14 +1279,22 @@ textarea {
   opacity: 1;
 }
 
-/* Bottom composer */
+/* Top centered composer */
 .ws-composer {
-  padding: 0.55rem 0.85rem 0.85rem;
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 75;
+  padding: 0.55rem 0.85rem;
   transition: padding 0.65s ease;
+  max-width: 600px;
+  width: calc(100% - 2rem);
 }
 
 .ws-composer-inner {
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   gap: 0.55rem;
   border-radius: 22px;
@@ -1266,21 +1305,22 @@ textarea {
 
 .ws-composer-voice .ws-composer-inner {
   min-height: 88px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .ws-composer-input {
-  flex: 1;
+  flex: 0 1 auto;
   resize: none;
   border: none;
   background: transparent;
   color: #ffffff;
   padding: 0.45rem 0.5rem;
   min-height: 36px;
-  max-height: 120px;
+  max-height: 200px;
   outline: none;
   font-size: 0.92rem;
   letter-spacing: -0.01em;
+  overflow-y: auto;
 }
 
 .ws-composer-input::placeholder {
@@ -1293,18 +1333,6 @@ textarea {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  animation: ws-voice-in 0.75s ease;
-}
-
-@keyframes ws-voice-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .ws-composer-voice-err {
@@ -1316,7 +1344,9 @@ textarea {
 .ws-composer-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.35rem;
+  margin-top: auto;
 }
 
 .ws-icon-btn {
@@ -1328,24 +1358,51 @@ textarea {
   color: #ffffff;
   display: grid;
   place-items: center;
-  transition:
-    box-shadow 0.5s ease,
-    transform 0.35s ease,
-    background 0.5s ease;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .ws-icon-btn:hover:not(:disabled) {
   box-shadow: 0 0 16px color-mix(in srgb, var(--ws-glow) 50%, transparent);
 }
 
+.ws-icon-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
 .ws-icon-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .ws-send-btn.is-stop {
   color: #fca5a5;
   border-color: color-mix(in srgb, #f87171 45%, transparent);
+}
+
+@keyframes soft-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(77, 159, 255, 0.4); }
+  70% { box-shadow: 0 0 0 20px rgba(77, 159, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(77, 159, 255, 0); }
+}
+
+.ws-pulse {
+  animation: soft-pulse 1.5s infinite;
+}
+
+.voice-string-card-active,
+.ws-send-btn.is-stop,
+.agent-mode-tab.active {
+  animation: soft-pulse 1.5s ease-in-out infinite;
+}
+
+.agent-panel-mode {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .eq-bar {
@@ -1395,6 +1452,7 @@ textarea {
   aspect-ratio: unset;
   min-height: unset;
   max-width: none;
+  pointer-events: none;
 }
 
 .voice-string-compact .voice-string-grid {

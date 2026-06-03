@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
+import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
+import { entranceTransition, softContainer, softEntrance, softItem, softPress } from "../utils/motion";
 
 function UploadIcon() {
   return (
@@ -52,8 +54,13 @@ export function UploadPage() {
 
   return (
     <div className="upload-page">
-      <label
+      <motion.label
         className={`glass-card upload-glass-card ${drag ? "upload-glass-card--drag" : ""} ${busy ? "upload-glass-card--busy" : ""}`}
+        variants={softContainer}
+        initial="hidden"
+        animate="show"
+        whileTap={busy ? undefined : softPress}
+        transition={entranceTransition}
         onDragOver={(e) => {
           e.preventDefault();
           if (!busy) setDrag(true);
@@ -73,32 +80,36 @@ export function UploadPage() {
           onChange={(e) => void onFiles(e.target.files)}
         />
 
-        <div className="upload-glass-card-header">
+        <motion.div className="upload-glass-card-header" variants={softItem} transition={entranceTransition}>
           <span className="upload-glass-card-badge">
             <UploadIcon />
           </span>
           <span className="upload-glass-card-label">Upload Files</span>
-        </div>
+        </motion.div>
 
-        <h1 className="upload-glass-card-title">
+        <motion.h1 className="upload-glass-card-title" variants={softEntrance} transition={entranceTransition}>
           {busy ? "Opening workspace…" : "Drag and drop your IFC file here, or click to browse."}
-        </h1>
+        </motion.h1>
 
-        <p className="upload-glass-card-hint muted">
+        <motion.p className="upload-glass-card-hint muted" variants={softItem} transition={entranceTransition}>
           Building models only • .ifc • max ~500 MB • preview starts instantly, syncs in background
-        </p>
+        </motion.p>
 
-        <div className="upload-glass-card-actions">
+        <motion.div className="upload-glass-card-actions" variants={softItem} transition={entranceTransition}>
           <span className="upload-action-btn" role="presentation">
             <UploadIcon />
             <span>{busy ? "Opening…" : "Choose file"}</span>
           </span>
-        </div>
+        </motion.div>
 
-        {localError && <p className="upload-glass-card-error">{localError}</p>}
+        {localError && (
+          <motion.p className="upload-glass-card-error" initial="hidden" animate="show" variants={softItem} transition={entranceTransition}>
+            {localError}
+          </motion.p>
+        )}
 
         <div className="glass-card-dots" aria-hidden="true" />
-      </label>
+      </motion.label>
     </div>
   );
 }

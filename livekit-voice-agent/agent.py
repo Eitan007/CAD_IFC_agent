@@ -82,7 +82,7 @@ class BIMAssistant(Agent):
             return f"Sorry, the building query failed: {exc}"
 
 
-server = AgentServer(num_idle_processes=0)
+server = AgentServer(num_idle_processes=2)
 
 
 def prewarm(proc: JobProcess) -> None:
@@ -111,6 +111,8 @@ async def entrypoint(ctx: JobContext) -> None:
         return
 
     ctx.proc.userdata["project_id"] = project_id
+    logger.info("Agent session starting for project_id=%s", project_id)
+    
     turn_detector = MultilingualModel()
 
     session = AgentSession(
@@ -122,8 +124,8 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
         llm=llm.FallbackAdapter(
             [
-                inference.LLM("openai/gpt-4.1-mini"),
-                inference.LLM("google/gemini-2.5-flash"),
+                inference.LLM("openai/gpt-4o-mini"),
+                inference.LLM("google/gemini-1.5-flash"),
             ]
         ),
         tts=inference.TTS(
@@ -142,15 +144,22 @@ async def entrypoint(ctx: JobContext) -> None:
         aec_warmup_duration=3.0,
     )
 
-    await session.start(
-        agent=BIMAssistant(project_id=project_id),
-        room=ctx.room,
-        room_options=room_io.RoomOptions(
-            audio_input=room_io.AudioInputOptions(
-                noise_cancellation=noise_cancellation.BVC(),
+    try:
+        logger.info("Starting agent session for room=%s", ctx.room.name)
+        await session.start(
+            agent=BIMAssistant(project_id=project_id),
+            room=ctx.room,
+            room_options=room_io.RoomOptions(
+                audio_input=room_io.AudioInputOptions(
+                    noise_cancellation=noise_cancellation.BVC(),
+                ),
+                # Keep agent in room when user mutes or switches to text (mic off, room stays up).
+                close_on_disconnect=False,
             ),
-        ),
-    )
+        )
+        logger.info("Agent session ended normally for room=%s", ctx.room.name)
+    except Exception as exc:
+        logger.exception("Agent session failed for room=%s: %s", ctx.room.name, exc)
 
 
 if __name__ == "__main__":

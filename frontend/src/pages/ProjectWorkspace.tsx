@@ -1,16 +1,20 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { enqueueProcess, getPipelineStatus, getProcessedModel } from "../api/client";
 import type { PipelineStatus } from "../api/types";
 import { CADViewer } from "../components/CADViewer";
 import { ConversationPanel } from "../components/ConversationPanel";
-import { WorkspaceComposer, type ComposerMode } from "../components/WorkspaceComposer";
+import { WorkspaceComposer } from "../components/WorkspaceComposer";
+import type { ComposerMode } from "../components/WorkspaceComposer.types";
 import { WorkspaceSidebar } from "../components/WorkspaceSidebar";
 import { IconMenu } from "../components/WorkspaceIcons";
 import { useBackgroundUpload } from "../hooks/useBackgroundUpload";
+import { endVoiceSession } from "../lib/voiceRoomManager";
 import { useConversationStore } from "../stores/conversationStore";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
+import { entranceTransition, softEntrance, softPress } from "../utils/motion";
 
 export function ProjectWorkspace() {
   const { projectId } = useParams();
@@ -19,7 +23,6 @@ export function ProjectWorkspace() {
 
   const hasLocalIfc = !!useProjectSessionStore((s) => s.localIfcBuffers[pid]);
   const uploadPhase = useProjectSessionStore((s) => s.uploadPhase[pid]);
-  const uploadProgress = useProjectSessionStore((s) => s.uploadProgress[pid] ?? 0);
   const uploadError = useProjectSessionStore((s) => s.uploadError[pid]);
 
   useBackgroundUpload(pid);
@@ -36,6 +39,12 @@ export function ProjectWorkspace() {
     setSidebarOpen(false);
   }, [pid, resetConversation]);
 
+  useEffect(() => {
+    return () => {
+      void endVoiceSession(pid);
+    };
+  }, [pid]);
+
   const statusQueryEnabled = !!pid && (!hasLocalIfc || uploadPhase === "done");
 
   const statusQuery = useQuery({
@@ -51,10 +60,15 @@ export function ProjectWorkspace() {
     },
   });
 
-  const processMutation = useMutation({
-    mutationFn: () => enqueueProcess(pid),
-    onSuccess: () => statusQuery.refetch(),
-  });
+  const processMutation = useMutation(
+    useMemo(
+      () => ({
+        mutationFn: () => enqueueProcess(pid),
+        onSuccess: () => statusQuery.refetch(),
+      }),
+      [pid, statusQuery],
+    ),
+  );
 
   useEffect(() => {
     if (hasLocalIfc) return;
@@ -96,17 +110,6 @@ export function ProjectWorkspace() {
     statusQuery.data?.status === "completed";
   const filtersReady = statusQuery.data?.json_ready === true && !!modelQuery.data;
 
-  const uploadLabel =
-    uploadPhase === "uploading"
-      ? `Syncing ${uploadProgress}%`
-      : uploadPhase === "done"
-        ? "Synced"
-        : uploadPhase === "error"
-          ? "Sync failed"
-          : hasLocalIfc
-            ? "Local preview"
-            : null;
-
   if (!pid) {
     return (
       <div className="ws-root">
@@ -116,28 +119,7 @@ export function ProjectWorkspace() {
   }
 
   return (
-    <div className="ws-root">
-      <header className="ws-header">
-        <button
-          type="button"
-          className="ws-menu-btn"
-          onClick={() => setSidebarOpen((o) => !o)}
-          aria-label="Toggle project sidebar"
-          aria-expanded={sidebarOpen}
-        >
-          <IconMenu />
-        </button>
-        <h1 className="ws-title">WORK SPACE</h1>
-        {uploadLabel && (
-          <span
-            className={`ws-upload-badge ${uploadPhase === "error" ? "ws-upload-badge-error" : ""}`}
-            title={uploadError ?? undefined}
-          >
-            {uploadLabel}
-          </span>
-        )}
-      </header>
-
+    <motion.div className="ws-root" initial="hidden" animate="show" variants={softEntrance} transition={entranceTransition}>
       <WorkspaceSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -155,28 +137,40 @@ export function ProjectWorkspace() {
         filtersReady={filtersReady}
       />
 
-      <div className="ws-body">
-        <div className="ws-stage">
-          <section className="ws-viewer-card">
-            <CADViewer projectId={pid} />
-          </section>
-          <ConversationPanel />
-        </div>
+      {/* Full-page CAD canvas */}
+      <section className="ws-viewer-card">
+        <CADViewer projectId={pid} />
+      </section>
 
-        <WorkspaceComposer
-          projectId={pid}
-          chatEnabled={chatEnabled}
-          pipelineStatus={pipelineStatus}
-          pipelineError={
-            uploadError ??
-            statusQuery.data?.error ??
-            statusQuery.error?.message ??
-            processMutation.error?.message
-          }
-          mode={composerMode}
-          onModeChange={setComposerMode}
-        />
-      </div>
-    </div>
+      {/* Hamburger menu button - top left */}
+      <motion.button
+        type="button"
+        className="ws-menu-btn"
+        whileTap={softPress}
+        onClick={() => setSidebarOpen((o) => !o)}
+        aria-label="Toggle project sidebar"
+        aria-expanded={sidebarOpen}
+      >
+        <IconMenu />
+      </motion.button>
+
+      {/* Side chat panel - left side */}
+      <ConversationPanel />
+
+      {/* Centered input bar - top center */}
+      <WorkspaceComposer
+        projectId={pid}
+        chatEnabled={chatEnabled}
+        pipelineStatus={pipelineStatus}
+        pipelineError={
+          uploadError ??
+          statusQuery.data?.error ??
+          statusQuery.error?.message ??
+          processMutation.error?.message
+        }
+        mode={composerMode}
+        onModeChange={setComposerMode}
+      />
+    </motion.div>
   );
 }

@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import { UploadPage } from "./pages/UploadPage";
 import { ProjectWorkspace } from "./pages/ProjectWorkspace";
 
@@ -12,7 +13,20 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-page-glow" aria-hidden />
+      <motion.div
+        className="app-page-glow"
+        aria-hidden
+        animate={{
+          scale: [1, 1.1, 1],
+          opacity: [0.8, 1, 0.8],
+          x: ["-50%", "-48%", "-52%", "-50%"],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+      />
 
       <div className={`app-slider ${isWorkspace ? "to-workspace" : ""}`}>
         <div className="app-slide app-slide-upload">

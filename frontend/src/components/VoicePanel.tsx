@@ -1,125 +1,44 @@
-import {
-  ConnectionState,
-  Room,
-  RoomEvent,
-  Track,
-} from "livekit-client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getVoiceToken } from "../api/client";
+import { useEffect } from "react";
+import { motion } from "framer-motion";
+import { useVoiceSession } from "../hooks/useVoiceSession";
 import { useUiStore } from "../stores/uiStore";
+import { entranceTransition, softContainer, softItem, softPress } from "../utils/motion";
 import { VoiceStringVisualizer } from "./VoiceStringVisualizer";
-
-type VoiceState = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
 type Props = {
   projectId: string;
   voiceEnabled: boolean;
 };
 
+const STATUS: Record<string, string> = {
+  idle: "Start a voice session with Jarvis.",
+  connecting: "Connecting to voice room…",
+  listening: "Listening — ask about your building model.",
+  speaking: "Jarvis is speaking…",
+  error: "Voice session needs attention.",
+};
+
 export function VoicePanel({ projectId, voiceEnabled }: Props) {
   const selectedElementId = useUiStore((s) => s.selectedElementId);
-  const roomRef = useRef<Room | null>(null);
-  const [room, setRoom] = useState<Room | null>(null);
-
-  const [connected, setConnected] = useState(false);
-  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [statusLine, setStatusLine] = useState("Start a voice session with Jarvis.");
-  const [error, setError] = useState<string | null>(null);
-
-  const disconnect = useCallback(async () => {
-    const activeRoom = roomRef.current;
-    roomRef.current = null;
-    setRoom(null);
-    if (activeRoom) {
-      await activeRoom.disconnect();
-    }
-    document.querySelectorAll("#bim-agent-audio").forEach((el) => el.remove());
-    setConnected(false);
-    setVoiceState("idle");
-    setStatusLine("Disconnected.");
-  }, []);
+  const { room, connected, voiceState, stringActive, error, connect, disconnect } = useVoiceSession(
+    projectId,
+    voiceEnabled,
+  );
 
   useEffect(() => {
-    return () => {
-      void disconnect();
-    };
-  }, [disconnect, projectId]);
-
-  const connect = async () => {
-    if (!voiceEnabled || connected) return;
-    setError(null);
-    setVoiceState("connecting");
-    setStatusLine("Connecting to voice room…");
-
-    try {
-      const { token, url } = await getVoiceToken(projectId);
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
-      roomRef.current = room;
-      setRoom(room);
-
-      room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
-        if (state === ConnectionState.Connected) {
-          setConnected(true);
-          setVoiceState("listening");
-          setStatusLine("Listening — ask about your building model.");
-        }
-        if (state === ConnectionState.Disconnected) {
-          setConnected(false);
-          setVoiceState("idle");
-        }
-      });
-
-      room.on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind === Track.Kind.Audio) {
-          const el = track.attach();
-          el.id = "bim-agent-audio";
-          document.body.appendChild(el);
-          setVoiceState("speaking");
-          setStatusLine("Jarvis is speaking…");
-        }
-      });
-
-      room.on(RoomEvent.TrackUnsubscribed, (track) => {
-        track.detach().forEach((el) => el.remove());
-        setVoiceState("listening");
-        setStatusLine("Listening — ask about your building model.");
-      });
-
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-        const agentSpeaking = speakers.some((p) => !p.isLocal);
-        if (agentSpeaking) {
-          setVoiceState("speaking");
-          setStatusLine("Jarvis is speaking…");
-        } else if (roomRef.current?.state === ConnectionState.Connected) {
-          setVoiceState("listening");
-          setStatusLine("Listening…");
-        }
-      });
-
-      await room.connect(url, token);
-      await room.localParticipant.setMicrophoneEnabled(true);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      setVoiceState("error");
-      setStatusLine("Could not connect.");
-      await disconnect();
+    if (voiceEnabled && !connected && voiceState !== "connecting" && voiceState !== "error") {
+      void connect();
     }
-  };
+  }, [voiceEnabled, connected, voiceState, connect]);
 
-  const stringActive =
-    connected ||
-    voiceState === "connecting" ||
-    voiceState === "listening" ||
-    voiceState === "speaking" ||
-    voiceState === "thinking";
+  const statusLine =
+    voiceState === "error" && error
+      ? error
+      : (STATUS[voiceState] ?? STATUS.idle);
 
   return (
-    <div className="voice-pane">
-      <div style={{ padding: "0.65rem 0.75rem", borderBottom: "1px solid color-mix(in srgb, var(--cyan) 20%, transparent)" }}>
+    <motion.div className="voice-pane" variants={softContainer} initial="hidden" animate="show">
+      <motion.div variants={softItem} transition={entranceTransition} style={{ padding: "0.65rem 0.75rem", borderBottom: "1px solid color-mix(in srgb, var(--cyan) 20%, transparent)" }}>
         <div style={{ fontWeight: 700 }}>Voice assistant</div>
         <div className="muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
           Same BIM agent as text chat — powered by LiveKit + backend tools.
@@ -129,35 +48,36 @@ export function VoicePanel({ projectId, voiceEnabled }: Props) {
             Selected element: <code>{selectedElementId}</code>
           </div>
         )}
-      </div>
+      </motion.div>
 
-      <div className="voice-stage">
+      <motion.div className="voice-stage" variants={softItem} transition={entranceTransition}>
         <VoiceStringVisualizer room={room} active={stringActive} />
 
         <p className="voice-status">{statusLine}</p>
-        {error && (
+        {error && voiceState !== "error" && (
           <p className="voice-error" role="alert">
             {error}
           </p>
         )}
-      </div>
+      </motion.div>
 
-      <div className="voice-actions">
+      <motion.div className="voice-actions" variants={softItem} transition={entranceTransition}>
         {!connected ? (
-          <button
+          <motion.button
             type="button"
             className="btn-voice"
+            whileTap={softPress}
             disabled={!voiceEnabled || voiceState === "connecting"}
             onClick={() => void connect()}
           >
             {voiceEnabled ? "Start voice" : "Voice unlocks after pipeline"}
-          </button>
+          </motion.button>
         ) : (
-          <button type="button" className="btn-voice btn-voice-end" onClick={() => void disconnect()}>
+          <motion.button type="button" className="btn-voice btn-voice-end" whileTap={softPress} onClick={() => void disconnect()}>
             End session
-          </button>
+          </motion.button>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

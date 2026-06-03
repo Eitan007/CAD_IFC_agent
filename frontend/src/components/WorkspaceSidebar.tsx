@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { PipelineStatus } from "../api/types";
 import { useUiStore } from "../stores/uiStore";
+import { entranceTransition, softContainer, softItem, softPress, stateTransition } from "../utils/motion";
 import { IconChevron } from "./WorkspaceIcons";
 
 type Props = {
@@ -39,36 +41,57 @@ function TreeBranch({
   const isOpen = expanded[node.id] ?? depth < 1;
 
   return (
-    <li className="ws-tree-item" style={{ paddingLeft: `${depth * 0.85 + 0.35}rem` }}>
+    <motion.li
+      className="ws-tree-item"
+      style={{ paddingLeft: `${depth * 0.85 + 0.35}rem` }}
+      variants={softItem}
+      transition={entranceTransition}
+    >
       <div className="ws-tree-row">
         {hasChildren ? (
-          <button type="button" className="ws-tree-toggle" onClick={() => onToggle(node.id)} aria-expanded={isOpen}>
+          <motion.button
+            type="button"
+            className="ws-tree-toggle"
+            whileTap={softPress}
+            onClick={() => onToggle(node.id)}
+            aria-expanded={isOpen}
+          >
             <IconChevron open={isOpen} />
-          </button>
+          </motion.button>
         ) : (
           <span className="ws-tree-spacer" />
         )}
         {node.onSelect ? (
-          <button
+          <motion.button
             type="button"
             className={`ws-tree-label-btn ${node.selected ? "selected" : ""}`}
+            whileTap={softPress}
             onClick={node.onSelect}
           >
             {node.label}
-          </button>
+          </motion.button>
         ) : (
           <span className="ws-tree-label">{node.label}</span>
         )}
         {node.meta && <span className="ws-tree-meta">{node.meta}</span>}
       </div>
-      {hasChildren && (
-        <ul className={`ws-tree-children ${isOpen ? "open" : ""}`}>
-          {node.children!.map((child) => (
-            <TreeBranch key={child.id} node={child} depth={depth + 1} expanded={expanded} onToggle={onToggle} />
-          ))}
-        </ul>
-      )}
-    </li>
+      <AnimatePresence initial={false}>
+        {hasChildren && isOpen && (
+          <motion.ul
+            className="ws-tree-children open"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={stateTransition}
+            variants={softContainer}
+          >
+            {node.children!.map((child) => (
+              <TreeBranch key={child.id} node={child} depth={depth + 1} expanded={expanded} onToggle={onToggle} />
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </motion.li>
   );
 }
 
@@ -178,20 +201,32 @@ export function WorkspaceSidebar({
 
   return (
     <>
-      <div className={`ws-sidebar-backdrop ${open ? "open" : ""}`} onClick={onClose} aria-hidden={!open} />
-      <nav className={`ws-sidebar ${open ? "open" : ""}`} aria-label="Project tools">
+      <motion.div
+        className={`ws-sidebar-backdrop ${open ? "open" : ""}`}
+        onClick={onClose}
+        aria-hidden={!open}
+        animate={{ opacity: open ? 1 : 0 }}
+        transition={{ duration: 0.5, ease: "easeInOut" }}
+      />
+      <motion.nav
+        className={`ws-sidebar ${open ? "open" : ""}`}
+        aria-label="Project tools"
+        initial={false}
+        animate={{ x: open ? 0 : "-100%", opacity: open ? 1 : 0.96 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
         <div className="ws-sidebar-head">
           <span>Explorer</span>
-          <button type="button" className="ws-sidebar-close" onClick={onClose} aria-label="Close sidebar">
+          <motion.button type="button" className="ws-sidebar-close" whileTap={softPress} onClick={onClose} aria-label="Close sidebar">
             ×
-          </button>
+          </motion.button>
         </div>
-        <ul className="ws-tree">
+        <motion.ul className="ws-tree" variants={softContainer} initial="hidden" animate={open ? "show" : "hidden"}>
           {tree.map((node) => (
             <TreeBranch key={node.id} node={node} depth={0} expanded={expanded} onToggle={toggle} />
           ))}
-        </ul>
-      </nav>
+        </motion.ul>
+      </motion.nav>
     </>
   );
 }

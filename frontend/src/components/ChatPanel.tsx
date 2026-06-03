@@ -1,8 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { sendChat } from "../api/client";
 import type { ChatReference } from "../api/types";
 import { useUiStore } from "../stores/uiStore";
+import { entranceTransition, softContainer, softItem, softPress } from "../utils/motion";
 import { ChatMarkdown } from "./ChatMarkdown";
 
 type Msg = {
@@ -82,8 +84,8 @@ export function ChatPanel({ projectId, chatEnabled, embedded = false }: Props) {
   const shellClass = embedded ? "chat-pane-embedded" : "glass-panel chat-pane";
 
   return (
-    <section className={shellClass} style={{ minHeight: 0, flex: 1, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "0.65rem 0.75rem", borderBottom: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}>
+    <motion.section className={shellClass} initial="hidden" animate="show" variants={softContainer} style={{ minHeight: 0, flex: 1, display: "flex", flexDirection: "column" }}>
+      <motion.div variants={softItem} transition={entranceTransition} style={{ padding: "0.65rem 0.75rem", borderBottom: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}>
         <div style={{ fontWeight: 700 }}>Knowledge graph QA</div>
         <div className="muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
           Powered by backend tools + LLM (no raw IFC in model context).
@@ -93,11 +95,11 @@ export function ChatPanel({ projectId, chatEnabled, embedded = false }: Props) {
             {hint}
           </div>
         )}
-      </div>
+      </motion.div>
 
-      <div className="chat-scroll">
+      <motion.div className="chat-scroll" variants={softContainer}>
         {messages.map((m, idx) => (
-          <div key={`${idx}-${m.role}`} className="chat-row">
+          <motion.div key={`${idx}-${m.role}`} className="chat-row" variants={softItem} transition={entranceTransition}>
             <div className={m.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"}>
               {m.role === "assistant" ? (
                 <ChatMarkdown text={m.text} />
@@ -115,11 +117,11 @@ export function ChatPanel({ projectId, chatEnabled, embedded = false }: Props) {
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
-      <div className="chat-input-row">
+      <motion.div className="chat-input-row" variants={softItem} transition={entranceTransition}>
         <textarea
           placeholder={
             chatEnabled
@@ -136,10 +138,10 @@ export function ChatPanel({ projectId, chatEnabled, embedded = false }: Props) {
             }
           }}
         />
-        <button type="button" className="btn-primary" disabled={!chatEnabled || mutation.isPending} onClick={handleSend}>
+        <motion.button type="button" className="btn-primary" whileTap={softPress} disabled={!chatEnabled || mutation.isPending} onClick={handleSend}>
           Send
-        </button>
-      </div>
-    </section>
+        </motion.button>
+      </motion.div>
+    </motion.section>
   );
 }
