@@ -60,8 +60,9 @@ def _match_cost(material: str, cost_db: dict[str, float]) -> float:
     # Exact match first
     if mat_lower in cost_db:
         return cost_db[mat_lower]
-    # Substring match
-    for key, rate in cost_db.items():
+    # Substring match (sort keys by length descending to prefer longer, more specific matches)
+    for key in sorted(cost_db.keys(), key=len, reverse=True):
+        rate = cost_db[key]
         if key in mat_lower or mat_lower in key:
             return rate
     return cost_db.get("unknown", 100.0)

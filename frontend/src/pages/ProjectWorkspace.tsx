@@ -2,19 +2,17 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { enqueueProcess, getPipelineStatus, getProcessedModel } from "../api/client";
+import { enqueueProcess, getPipelineStatus } from "../api/client";
 import type { PipelineStatus } from "../api/types";
 import { CADViewer } from "../components/CADViewer";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { WorkspaceComposer } from "../components/WorkspaceComposer";
 import type { ComposerMode } from "../components/WorkspaceComposer.types";
-import { WorkspaceSidebar } from "../components/WorkspaceSidebar";
-import { IconMenu } from "../components/WorkspaceIcons";
 import { useBackgroundUpload } from "../hooks/useBackgroundUpload";
 import { endVoiceSession } from "../lib/voiceRoomManager";
 import { useConversationStore } from "../stores/conversationStore";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
-import { entranceTransition, softEntrance, softPress } from "../utils/motion";
+import { entranceTransition, softEntrance } from "../utils/motion";
 
 export function ProjectWorkspace() {
   const { projectId } = useParams();
@@ -27,7 +25,6 @@ export function ProjectWorkspace() {
 
   useBackgroundUpload(pid);
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("text");
 
   const enqueueAttempts = useRef(0);
@@ -36,7 +33,6 @@ export function ProjectWorkspace() {
     resetConversation();
     enqueueAttempts.current = 0;
     setComposerMode("text");
-    setSidebarOpen(false);
   }, [pid, resetConversation]);
 
   useEffect(() => {
@@ -80,35 +76,11 @@ export function ProjectWorkspace() {
     processMutation.mutate();
   }, [hasLocalIfc, pid, uploadPhase, statusQuery.data?.status, processMutation]);
 
-  const modelQuery = useQuery({
-    queryKey: ["processed-model", pid],
-    queryFn: () => getProcessedModel(pid),
-    enabled: !!pid && statusQuery.data?.json_ready === true,
-  });
-
-  const storeys = useMemo(() => {
-    const els = modelQuery.data?.elements ?? [];
-    const set = new Set<string>();
-    for (const e of els) {
-      const st = e.storey?.trim();
-      if (st) set.add(st);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [modelQuery.data?.elements]);
-
-  const types = useMemo(() => {
-    const els = modelQuery.data?.elements ?? [];
-    const set = new Set<string>();
-    for (const e of els) set.add(e.type);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [modelQuery.data?.elements]);
-
   const pipelineStatus = statusQuery.data?.status as PipelineStatus | undefined;
   const chatEnabled =
     statusQuery.data?.graph_ready === true ||
     statusQuery.data?.status === "graph_ready" ||
     statusQuery.data?.status === "completed";
-  const filtersReady = statusQuery.data?.json_ready === true && !!modelQuery.data;
 
   if (!pid) {
     return (
@@ -120,7 +92,7 @@ export function ProjectWorkspace() {
 
   return (
     <motion.div className="ws-root" initial="hidden" animate="show" variants={softEntrance} transition={entranceTransition}>
-      <WorkspaceSidebar
+      {/* <WorkspaceSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         projectId={pid}
@@ -135,7 +107,7 @@ export function ProjectWorkspace() {
         storeys={storeys}
         types={types}
         filtersReady={filtersReady}
-      />
+      /> */}
 
       {/* Full-page CAD canvas */}
       <section className="ws-viewer-card">
@@ -143,7 +115,7 @@ export function ProjectWorkspace() {
       </section>
 
       {/* Hamburger menu button - top left */}
-      <motion.button
+      {/* <motion.button
         type="button"
         className="ws-menu-btn"
         whileTap={softPress}
@@ -152,7 +124,7 @@ export function ProjectWorkspace() {
         aria-expanded={sidebarOpen}
       >
         <IconMenu />
-      </motion.button>
+      </motion.button> */}
 
       {/* Side chat panel - left side */}
       <ConversationPanel />

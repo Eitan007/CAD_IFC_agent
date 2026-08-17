@@ -18,12 +18,27 @@ function UploadIcon() {
   );
 }
 
+function SparklesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3v3m0 12v3M3 12h3m12 0h3m-2.636-6.364l-2.121 2.121m-8.486 8.486l-2.121 2.121m0-12.728l2.121 2.121m8.486 8.486l2.121 2.121"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function UploadPage() {
   const navigate = useNavigate();
   const setLocalIfc = useProjectSessionStore((s) => s.setLocalIfc);
   const [drag, setDrag] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+
+  const SAMPLE_PROJECT_ID = "sample-basichouse";
 
   const onFiles = useCallback(
     async (files: FileList | null) => {
@@ -48,6 +63,16 @@ export function UploadPage() {
       }
     },
     [navigate, setLocalIfc],
+  );
+
+  const onSelectSample = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpening(true);
+      navigate(`/project/${encodeURIComponent(SAMPLE_PROJECT_ID)}`, { replace: true });
+    },
+    [navigate],
   );
 
   const busy = opening;
@@ -100,6 +125,17 @@ export function UploadPage() {
             <UploadIcon />
             <span>{busy ? "Opening…" : "Choose file"}</span>
           </span>
+
+          <motion.button
+            type="button"
+            className="upload-action-btn upload-action-btn--sample"
+            disabled={busy}
+            whileTap={busy ? undefined : softPress}
+            onClick={onSelectSample}
+          >
+            <SparklesIcon />
+            <span>Try Sample Model</span>
+          </motion.button>
         </motion.div>
 
         {localError && (

@@ -10,6 +10,20 @@ import { entranceTransition, softItem } from "../utils/motion";
 
 const WASM_PATH = `${import.meta.env.BASE_URL}wasm/`;
 
+// --- TWEAKABLE CAMERA SETTINGS ---
+// Tweak these coordinate values (multipliers based on the model's size) 
+// to get the desired starting camera position.
+const CAMERA_START_X = 1.4;
+const CAMERA_START_Y = 0.4;
+const CAMERA_START_Z = 1.4;
+
+// Tweak these coordinates to adjust the point the camera is looking at.
+// Change these if the model appears off-center (e.g., bottom right).
+const TARGET_CENTER_X = 50;
+const TARGET_CENTER_Y = -10;
+const TARGET_CENTER_Z = 10;
+// ---------------------------------
+
 function extractExpressId(hit: THREE.Intersection): string | null {
   const mesh = hit.object as THREE.Mesh & { modelID?: number };
   const faceIndex = hit.faceIndex;
@@ -45,11 +59,14 @@ function fitCameraToModel(
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z) || 10;
 
-  controls.target.copy(center);
-  camera.position.copy(center.clone().add(new THREE.Vector3(radius * 1.4, radius * 1.1, radius * 1.4)));
+  root.position.sub(center); // Center the model
+  
+  controls.target.set(TARGET_CENTER_X, TARGET_CENTER_Y, TARGET_CENTER_Z);
+  camera.position.set(radius * CAMERA_START_X, radius * CAMERA_START_Y, radius * CAMERA_START_Z);
   camera.near = Math.max(0.01, radius / 500);
   camera.far = radius * 500;
   camera.updateProjectionMatrix();
+  controls.update();
 }
 
 export function CADViewer({ projectId }: { projectId: string }) {

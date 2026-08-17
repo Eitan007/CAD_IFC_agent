@@ -50,6 +50,7 @@ class PipelineStatusResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     selected_element: str | None = None
+    is_voice: bool = False
 
 
 class GraphRef(BaseModel):
@@ -74,6 +75,21 @@ class VoiceTokenResponse(BaseModel):
 
 
 def _find_uploaded_file(project_id: str) -> Path:
+    if project_id == project_jobs.SAMPLE_PROJECT_ID:
+        # Check standard upload dir or repo root fallback
+        root = project_jobs.upload_root(project_id)
+        if root.exists():
+            files = list(root.iterdir())
+            if files:
+                return files[0]
+        # Fallback to repo root or bim_assistant parent BasicHouse.ifc
+        repo_root_ifc = Path(__file__).resolve().parents[3] / "BasicHouse.ifc"
+        if repo_root_ifc.is_file():
+            return repo_root_ifc
+        bim_root_ifc = Path(__file__).resolve().parents[2] / "BasicHouse.ifc"
+        if bim_root_ifc.is_file():
+            return bim_root_ifc
+
     root = project_jobs.upload_root(project_id)
     if not root.exists():
         raise HTTPException(status_code=404, detail="Project upload not found.")
@@ -242,7 +258,7 @@ async def project_chat(project_id: str, body: ChatRequest):
     parts.append(body.message)
     full_query = "\n".join(parts)
 
-    result = await run_agent(query=full_query, project_id=project_id)
+    result = await run_agent(query=full_query, project_id=project_id, is_voice=body.is_voice)
     tool_calls = result["tool_calls"]
 
     references = [

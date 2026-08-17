@@ -5,16 +5,17 @@ import { useUiStore } from "../stores/uiStore";
 import { entranceTransition, softContainer, softItem, softPress } from "../utils/motion";
 import { VoiceStringVisualizer } from "./VoiceStringVisualizer";
 
+
 type Props = {
   projectId: string;
   voiceEnabled: boolean;
 };
 
 const STATUS: Record<string, string> = {
-  idle: "Start a voice session with Jarvis.",
+  idle: "Start a voice session with Bimi.",
   connecting: "Connecting to voice room…",
   listening: "Listening — ask about your building model.",
-  speaking: "Jarvis is speaking…",
+  speaking: "Bimi is speaking…",
   error: "Voice session needs attention.",
 };
 

@@ -16,6 +16,8 @@ from app.storage.repository import save_building_model
 
 logger = logging.getLogger(__name__)
 
+SAMPLE_PROJECT_ID = "sample-basichouse"
+
 _lock = asyncio.Lock()
 _jobs: dict[str, dict[str, Any]] = {}
 
@@ -91,7 +93,7 @@ async def execute_pipeline_job(project_id: str) -> None:
             logger.warning("JSON write failed project_id=%s: %s", project_id, exc)
             # Chat stays available; filters wait for JSON retry / manual fix.
 
-        asyncio.create_task(_export_glb_background(project_id, input_path))
+        # asyncio.create_task(_export_glb_background(project_id, input_path))
 
     except Exception as exc:
         logger.exception("Pipeline failed project_id=%s", project_id)
@@ -137,10 +139,6 @@ async def resolve_pipeline_status(project_id: str) -> dict[str, Any]:
     settings = get_settings()
     job = await get_job(project_id)
 
-    upload_dir = Path(settings.upload_dir) / project_id
-    if not upload_dir.exists():
-        return {}
-
     if job:
         return _build_status_payload(project_id, job)
 
@@ -152,6 +150,10 @@ async def resolve_pipeline_status(project_id: str) -> dict[str, Any]:
             "graph_ready": True,
             "json_ready": True,
         }
+
+    upload_dir = Path(settings.upload_dir) / project_id
+    if not upload_dir.exists():
+        return {}
 
     return {"status": "received", "project_id": project_id, "graph_ready": False, "json_ready": False}
 

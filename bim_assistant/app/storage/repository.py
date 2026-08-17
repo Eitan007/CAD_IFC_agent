@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.normalization.schema import BuildingElement, BuildingModel
@@ -163,74 +163,104 @@ async def _neo4j_save_building_model_tx(tx, model: BuildingModel) -> None:
     )
 
     pid = model.project_id
+    
+    # Prepare lists for batch writes
+    elements_batch = []
+    connects_to_batch = []
+    located_in_batch = []
+    contained_by_batch = []
+    on_storey_batch = []
+
     for elem in model.elements:
         props = _building_element_to_neo4j_props(elem)
+        elements_batch.append({
+            "id": elem.id,
+            "props": props
+        })
+        
+        for tid in elem.connected_to or []:
+            if tid:
+                connects_to_batch.append({"aid": elem.id, "bid": str(tid)})
+        if elem.located_in:
+            located_in_batch.append({"aid": elem.id, "bid": str(elem.located_in)})
+        if elem.contained_by:
+            contained_by_batch.append({"aid": elem.id, "bid": str(elem.contained_by)})
+        if elem.storey:
+            on_storey_batch.append({"eid": elem.id, "storey": str(elem.storey)})
+
+    BATCH_SIZE = 1000
+
+    # 1. Batch write nodes and match to project
+    for i in range(0, len(elements_batch), BATCH_SIZE):
+        chunk = elements_batch[i : i + BATCH_SIZE]
         await tx.run(
             """
-            MERGE (e:Element {id: $id})
-            SET e += $props
-            MERGE (pr:Project {id: $pid})
+            UNWIND $batch AS row
+            MERGE (e:Element {id: row.id})
+            SET e += row.props
+            WITH e, row
+            MATCH (pr:Project {id: $pid})
             MERGE (e)-[:IN_PROJECT]->(pr)
             """,
-            id=elem.id,
-            props=props,
-            pid=pid,
+            batch=chunk,
+            pid=pid
         )
 
-    for elem in model.elements:
-        eid = elem.id
-        for tid in elem.connected_to or []:
-            if not tid:
-                continue
-            await tx.run(
-                """
-                MATCH (a:Element {id: $aid, project_id: $pid})
-                MATCH (b:Element {id: $bid, project_id: $pid})
-                MERGE (a)-[:CONNECTS_TO]->(b)
-                """,
-                aid=eid,
-                bid=str(tid),
-                pid=pid,
-            )
+    # 2. Batch write CONNECTS_TO relationships
+    for i in range(0, len(connects_to_batch), BATCH_SIZE):
+        chunk = connects_to_batch[i : i + BATCH_SIZE]
+        await tx.run(
+            """
+            UNWIND $batch AS row
+            MATCH (a:Element {id: row.aid, project_id: $pid})
+            MATCH (b:Element {id: row.bid, project_id: $pid})
+            MERGE (a)-[:CONNECTS_TO]->(b)
+            """,
+            batch=chunk,
+            pid=pid
+        )
 
-        lid = elem.located_in
-        if lid:
-            await tx.run(
-                """
-                MATCH (a:Element {id: $aid, project_id: $pid})
-                MATCH (b:Element {id: $bid, project_id: $pid})
-                MERGE (a)-[:LOCATED_IN]->(b)
-                """,
-                aid=eid,
-                bid=str(lid),
-                pid=pid,
-            )
+    # 3. Batch write LOCATED_IN relationships
+    for i in range(0, len(located_in_batch), BATCH_SIZE):
+        chunk = located_in_batch[i : i + BATCH_SIZE]
+        await tx.run(
+            """
+            UNWIND $batch AS row
+            MATCH (a:Element {id: row.aid, project_id: $pid})
+            MATCH (b:Element {id: row.bid, project_id: $pid})
+            MERGE (a)-[:LOCATED_IN]->(b)
+            """,
+            batch=chunk,
+            pid=pid
+        )
 
-        cid = elem.contained_by
-        if cid:
-            await tx.run(
-                """
-                MATCH (a:Element {id: $aid, project_id: $pid})
-                MATCH (b:Element {id: $bid, project_id: $pid})
-                MERGE (a)-[:CONTAINED_BY]->(b)
-                """,
-                aid=eid,
-                bid=str(cid),
-                pid=pid,
-            )
+    # 4. Batch write CONTAINED_BY relationships
+    for i in range(0, len(contained_by_batch), BATCH_SIZE):
+        chunk = contained_by_batch[i : i + BATCH_SIZE]
+        await tx.run(
+            """
+            UNWIND $batch AS row
+            MATCH (a:Element {id: row.aid, project_id: $pid})
+            MATCH (b:Element {id: row.bid, project_id: $pid})
+            MERGE (a)-[:CONTAINED_BY]->(b)
+            """,
+            batch=chunk,
+            pid=pid
+        )
 
-        storey = elem.storey
-        if storey:
-            await tx.run(
-                """
-                MATCH (e:Element {id: $eid, project_id: $pid})
-                MERGE (s:Storey {project_id: $pid, name: $storey})
-                MERGE (e)-[:ON_STOREY]->(s)
-                """,
-                eid=eid,
-                pid=pid,
-                storey=str(storey),
-            )
+    # 5. Batch write ON_STOREY relationships
+    for i in range(0, len(on_storey_batch), BATCH_SIZE):
+        chunk = on_storey_batch[i : i + BATCH_SIZE]
+        await tx.run(
+            """
+            UNWIND $batch AS row
+            MATCH (e:Element {id: row.eid, project_id: $pid})
+            MERGE (s:Storey {project_id: $pid, name: row.storey})
+            MERGE (e)-[:ON_STOREY]->(s)
+            """,
+            batch=chunk,
+            pid=pid
+        )
 
 
 # ── Write ───────────────────────────────────────────────────────────────────
@@ -395,6 +425,56 @@ async def get_material_summary(
     return rows
 
 
+async def get_material_element_types(
+    project_id: str,
+    session: AsyncSession | Any,
+) -> list[dict]:
+    """Get unique material-type mappings directly from the database."""
+    if settings.db_backend == "postgres":
+        assert isinstance(session, AsyncSession)
+        result = await session.execute(
+            select(Element.material, Element.type)
+            .where(Element.project_id == project_id, Element.material.isnot(None))
+            .distinct()
+        )
+        return [{"material": row[0], "type": row[1]} for row in result.all()]
+
+    res = await session.run(
+        """
+        MATCH (e:Element {project_id: $pid})
+        WHERE e.material IS NOT NULL AND e.material <> ''
+        RETURN DISTINCT e.material AS material, e.type AS type
+        """,
+        pid=project_id,
+    )
+    return [{"material": r["material"], "type": r["type"]} async for r in res]
+
+
+async def get_element_counts(
+    project_id: str,
+    session: AsyncSession | Any,
+) -> dict[str, int]:
+    """Get frequency count of element types directly using database aggregation."""
+    if settings.db_backend == "postgres":
+        assert isinstance(session, AsyncSession)
+        result = await session.execute(
+            select(Element.type, func.count(Element.id).label("count"))
+            .where(Element.project_id == project_id)
+            .group_by(Element.type)
+        )
+        return {row[0]: row[1] for row in result.all()}
+
+    res = await session.run(
+        """
+        MATCH (e:Element {project_id: $pid})
+        RETURN e.type AS type, count(e) AS count
+        """,
+        pid=project_id,
+    )
+    return {r["type"]: r["count"] async for r in res}
+
+
+
 async def get_element_by_id(
     element_id: str,
     session: AsyncSession | Any,
@@ -499,31 +579,83 @@ async def graph_traverse(
 
     if settings.db_backend == "postgres":
         assert isinstance(session, AsyncSession)
-        all_rows = await get_all_elements(project_id, session, limit=50_000)
-        by_id = {e.id: e for e in all_rows}
-        start = by_id.get(start_element_id)
-        if start is None:
-            return []
+        
+        # Fall back to SQLite BFS implementation if not running on PostgreSQL (e.g. during SQLite unit tests)
+        if session.bind.dialect.name != "postgresql":
+            all_rows = await get_all_elements(project_id, session, limit=50_000)
+            by_id = {e.id: e for e in all_rows}
+            start = by_id.get(start_element_id)
+            if start is None:
+                return []
 
-        seen: set[str] = set()
-        frontier = [start_element_id]
-        seen.add(start_element_id)
-        for _ in range(d):
-            next_front: list[str] = []
-            for nid in frontier:
-                el = by_id.get(nid)
-                if el is None:
-                    continue
-                for nb in _postgres_neighbors(el, relationship_type, by_id):
-                    if nb not in by_id:
+            seen: set[str] = set()
+            frontier = [start_element_id]
+            seen.add(start_element_id)
+            for _ in range(d):
+                next_front: list[str] = []
+                for nid in frontier:
+                    el = by_id.get(nid)
+                    if el is None:
                         continue
-                    if nb not in seen:
-                        seen.add(nb)
-                        next_front.append(nb)
-            frontier = next_front
-            if not frontier:
-                break
-        return [by_id[i] for i in sorted(seen) if i in by_id]
+                    for nb in _postgres_neighbors(el, relationship_type, by_id):
+                        if nb not in by_id:
+                            continue
+                        if nb not in seen:
+                            seen.add(nb)
+                            next_front.append(nb)
+                frontier = next_front
+                if not frontier:
+                    break
+            return [by_id[i] for i in sorted(seen) if i in by_id]
+
+        # For PostgreSQL: direct database level traversal
+        if relationship_type == "ON_STOREY":
+            result = await session.execute(
+                select(Element).where(
+                    Element.project_id == project_id,
+                    Element.storey == select(Element.storey).where(
+                        Element.id == start_element_id,
+                        Element.project_id == project_id
+                    ).scalar_subquery()
+                )
+            )
+            return list(result.scalars().all())
+
+        if relationship_type == "CONNECTS_TO":
+            join_cond = "gf.connected_to @> jsonb_build_array(e.id)"
+        elif relationship_type == "LOCATED_IN":
+            join_cond = "e.id = gf.located_in"
+        else: # CONTAINED_BY
+            join_cond = "e.id = gf.contained_by"
+
+        cte_query = f"""
+            WITH RECURSIVE graph_frontier AS (
+                SELECT id, connected_to, located_in, contained_by, 0 AS current_depth
+                FROM elements
+                WHERE id = :start_id AND project_id = :project_id
+                
+                UNION ALL
+                
+                SELECT e.id, e.connected_to, e.located_in, e.contained_by, gf.current_depth + 1
+                FROM elements e
+                INNER JOIN graph_frontier gf ON {join_cond}
+                WHERE e.project_id = :project_id AND gf.current_depth < :max_depth
+            )
+            SELECT DISTINCT id FROM graph_frontier;
+        """
+        
+        ids_result = await session.execute(
+            text(cte_query),
+            {"start_id": start_element_id, "project_id": project_id, "max_depth": d}
+        )
+        reachable_ids = [row[0] for row in ids_result.all()]
+        if not reachable_ids:
+            return []
+        
+        result = await session.execute(
+            select(Element).where(Element.id.in_(reachable_ids))
+        )
+        return list(result.scalars().all())
 
     found: dict[str, Element] = {}
 

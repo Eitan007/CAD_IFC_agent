@@ -115,8 +115,8 @@ export function WorkspaceSidebar({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     project: true,
     filters: true,
-    storeys: false,
-    types: false,
+    storeys: true,
+    types: true,
     selection: true,
   });
 
@@ -158,28 +158,29 @@ export function WorkspaceSidebar({
       label: "Project",
       children: [
         {
+          id: "project-id",
+          label: "Project ID",
+          meta: projectId.slice(0, 8) + "…",
+        },
+        {
           id: "pipeline",
-          label: "Pipeline",
+          label: "Pipeline Status",
           meta: pipelineStatus ?? "…",
         },
         {
           id: "elements",
-          label: "Elements",
+          label: "Total Elements",
           meta: elementCount != null ? String(elementCount) : "—",
-        },
-        {
-          id: "project-id",
-          label: projectId.slice(0, 12) + "…",
         },
       ],
     },
     {
       id: "filters",
-      label: "Filters",
+      label: "Classifications",
       meta: filtersReady ? "" : "pending",
       children: [
-        { id: "storeys", label: "Storey", children: filtersReady ? storeyNodes : [] },
-        { id: "types", label: "Component type", children: filtersReady ? typeNodes : [] },
+        { id: "storeys", label: "Storeys", children: filtersReady ? storeyNodes : [] },
+        { id: "types", label: "Component types", children: filtersReady ? typeNodes : [] },
       ],
     },
     {

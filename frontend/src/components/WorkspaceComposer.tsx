@@ -11,6 +11,36 @@ import { IconBack, IconEqualizer, IconSendUp, IconStopSquare } from "./Workspace
 import { VoiceStringVisualizer } from "./VoiceStringVisualizer";
 import type { ComposerMode } from "./WorkspaceComposer.types";
 
+function playGenericSound(type: "activate" | "deactivate") {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === "activate") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+    } else {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+    }
+    
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (err) {
+    console.error("Audio play failed:", err);
+  }
+}
+
 type Props = {
   projectId: string;
   chatEnabled: boolean;
@@ -35,6 +65,29 @@ export function WorkspaceComposer({
 
   const [input, setInput] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const composerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+
+    const updateHeight = () => {
+      const rect = el.getBoundingClientRect();
+      document.documentElement.style.setProperty("--composer-bottom", `${rect.bottom}px`);
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--composer-bottom");
+    };
+  }, []);
 
   const { room, connected, stringActive, error, connect, pause } = useVoiceSession(
     projectId,
@@ -128,15 +181,18 @@ export function WorkspaceComposer({
 
   const switchToVoice = useCallback(() => {
     if (!chatEnabled) return;
+    playGenericSound("activate");
     onModeChange("voice");
   }, [chatEnabled, onModeChange]);
 
   const switchToText = useCallback(() => {
+    playGenericSound("deactivate");
     onModeChange("text");
   }, [onModeChange]);
 
   return (
     <motion.footer
+      ref={composerRef}
       initial={{ opacity: 0, x: "-50%", y: 20, scale: 0.95 }}
       animate={{ opacity: 1, x: "-50%", y: 0, scale: 1 }}
       transition={entranceTransition}
@@ -156,7 +212,7 @@ export function WorkspaceComposer({
                 chatEnabled
                   ? "Message the agent…"
                   : pipelineStatus === "processing" || pipelineStatus === "queued"
-                    ? "Parsing model — chat unlocks when Neo4j is ready…"
+                    ? "Building Knowledge base…"
                     : pipelineError
                       ? `Pipeline error: ${pipelineError}`
                       : "Chat unlocks when the knowledge graph is ready…"

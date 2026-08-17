@@ -43,7 +43,9 @@ export function ConversationPanel() {
                 <span className="ws-bubble-tag">{m.role === "user" ? "You" : "BIMI"}</span>
                 <div className="ws-bubble-body">
                   {m.role === "assistant" ? (
-                    <ChatMarkdown text={m.text} className="ws-bubble-text chat-markdown" />
+                    <ChatMarkdown 
+                    text={m.text} className="ws-bubble-text chat-markdown" 
+                    />
                   ) : (
                     <p className="ws-bubble-text">{m.text}</p>
                   )}

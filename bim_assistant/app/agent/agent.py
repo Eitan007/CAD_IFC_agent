@@ -88,12 +88,22 @@ async def _dispatch_tool(tool_name: str, tool_input: dict) -> Any:
     return result
 
 
+VOICE_SYSTEM_PROMPT_ADDENDUM = """
+IMPORTANT - VOICE QUERY MODE:
+The user is interacting via voice/speech. 
+- Keep your response very concise, conversational, and direct (under 3-4 short sentences).
+- Do NOT use markdown styling such as bolding (**), asterisks, headers, markdown tables, or bulleted lists.
+- Speak naturally so the output sounds fluid when read aloud by a text-to-speech engine.
+"""
+
+
 # ── Agent loop ───────────────────────────────────────────────────────────────
 
 async def run_agent(
     query: str,
     project_id: str,
     max_iterations: int = 8,
+    is_voice: bool = False,
 ) -> dict:
     """
     Run the agentic loop for a user query.
@@ -116,14 +126,15 @@ async def run_agent(
     ]
 
     tool_trace: list[dict] = []
+    system_prompt = SYSTEM_PROMPT + (VOICE_SYSTEM_PROMPT_ADDENDUM if is_voice else "")
 
     for iteration in range(max_iterations):
-        logger.debug("Agent iteration %d/%d", iteration + 1, max_iterations)
+        logger.debug("Agent iteration %d/%d (is_voice=%s)", iteration + 1, max_iterations, is_voice)
 
         response = await client.messages.create(
             model=model,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=TOOL_DEFINITIONS,
             messages=messages,
         )

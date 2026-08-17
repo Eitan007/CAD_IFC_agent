@@ -286,8 +286,11 @@ textarea {
 
 .upload-glass-card-actions {
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 0.85rem;
   margin-top: 2rem;
+  flex-wrap: wrap;
 }
 
 .upload-action-btn {
@@ -302,9 +305,24 @@ textarea {
   background: #ffffff;
   box-shadow: 0 8px 28px rgba(255, 255, 255, 0.12);
   transition: all 0.3s ease;
+  border: none;
 }
 
-.upload-glass-card:hover:not(.upload-glass-card--busy) .upload-action-btn {
+.upload-action-btn--sample {
+  color: #ffffff;
+  background: color-mix(in srgb, #3b82f6 30%, transparent);
+  border: 1px solid color-mix(in srgb, #60a5fa 45%, transparent);
+  box-shadow: 0 8px 28px rgba(59, 130, 246, 0.2);
+}
+
+.upload-action-btn--sample:hover:not(:disabled) {
+  background: color-mix(in srgb, #3b82f6 50%, transparent);
+  border-color: color-mix(in srgb, #93c5fd 65%, transparent);
+  box-shadow: 0 10px 32px rgba(59, 130, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+.upload-glass-card:hover:not(.upload-glass-card--busy) .upload-action-btn:not(.upload-action-btn--sample) {
   box-shadow: 0 10px 32px rgba(255, 255, 255, 0.2);
 }
 
@@ -879,13 +897,12 @@ textarea {
 .ws-conversation {
   position: absolute;
   right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
+  top: var(--composer-bottom, 5rem);
+  height: calc(100% - var(--composer-bottom, 5rem) - 1rem);
   z-index: 50;
   display: flex;
   flex-direction: column;
   width: 320px;
-  max-height: 70vh;
   border-radius: 22px;
   overflow: hidden;
   background: transparent;
@@ -893,7 +910,7 @@ textarea {
   -webkit-backdrop-filter: none;
   border: none;
   box-shadow: none;
-  transition: width 0.6s ease, height 0.6s ease, border-radius 0.6s ease;
+  transition: width 0.6s ease, height 0.6s ease, top 0.6s ease, border-radius 0.6s ease;
 }
 
 /* Transparent gradient border effect - disabled for "completely transparent" look */
@@ -903,6 +920,7 @@ textarea {
 
 /* When there are no messages, make it a small circle */
 .ws-conversation.no-messages {
+  top: calc(100% - 1rem - 52px);
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -1028,12 +1046,13 @@ textarea {
 .ws-bubble-body {
   min-width: 0;
   width: 100%;
+  font-size: x-small;
 }
 
 .ws-bubble-text {
   margin: 0;
-  font-size: 0.66rem;
-  line-height: 1.42;
+  font-size: 0.62rem;
+  line-height: 1.4;
   overflow-wrap: anywhere;
   word-break: break-word;
   color: #ffffff;
@@ -1057,7 +1076,7 @@ textarea {
 }
 
 .chat-markdown p {
-  margin: 0.25em 0;
+  margin: 0.2em 0;
 }
 
 .chat-markdown p:first-child {
@@ -1066,16 +1085,16 @@ textarea {
 
 .chat-markdown ul,
 .chat-markdown ol {
-  margin: 0.28em 0;
-  padding-left: 1em;
+  margin: 0.25em 0;
+  padding-left: 1.15em;
 }
 
 .chat-markdown li {
-  margin: 0.12em 0;
+  margin: 0.1em 0;
 }
 
 .chat-markdown li > p {
-  margin: 0.15em 0;
+  margin: 0.1em 0;
 }
 
 .chat-markdown strong {
@@ -1084,7 +1103,7 @@ textarea {
 
 .chat-markdown code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9em;
+  font-size: 0.85em;
   padding: 0.1em 0.35em;
   border-radius: 4px;
   background: color-mix(in srgb, var(--bg-deep) 55%, transparent);
@@ -1092,8 +1111,8 @@ textarea {
 }
 
 .chat-markdown pre {
-  margin: 0.32em 0;
-  padding: 0.42rem 0.5rem;
+  margin: 0.3em 0;
+  padding: 0.4rem 0.5rem;
   border-radius: 8px;
   overflow-x: auto;
   background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
@@ -1109,10 +1128,10 @@ textarea {
 .chat-markdown h1,
 .chat-markdown h2,
 .chat-markdown h3 {
-  margin: 0.38em 0 0.22em;
-  font-size: 0.92em;
+  margin: 0.35em 0 0.2em;
+  font-size: 0.9em;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .chat-markdown a {
@@ -1121,9 +1140,33 @@ textarea {
   text-underline-offset: 2px;
 }
 
-.chat-bubble-assistant .chat-markdown {
+.chat-bubble-assistant 
+.chat-markdown 
+.chat-markdown p,
+.chat-markdown li,
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6,
+.chat-markdown span,
+.chat-markdown a,
+.chat-markdown strong,
+.chat-markdown em,
+.chat-markdown code,
+.chat-markdown pre,
+.chat-markdown blockquote,
+.chat-markdown td,
+.chat-markdown th,
+.chat-markdown label,
+.chat-markdown dt,
+.chat-markdown dd,
+.chat-markdown figcaption,
+.chat-markdown caption {
+ 
   font-size: 0.75rem;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--text);
 }
 
@@ -1406,15 +1449,18 @@ textarea {
 }
 
 .eq-bar {
-  transform-origin: bottom;
-  animation: eq-pulse 0.9s ease-in-out infinite;
+  transform-origin: center;
+  animation: eq-pulse 1.5s ease-in-out infinite;
 }
 
 .eq-bar-1 {
   animation-delay: 0s;
 }
 .eq-bar-2 {
-  animation-delay: 0.15s;
+  animation-delay: 0.1s;
+}
+.eq-bar-3 {
+  animation-delay: 0.2s;
 }
 .eq-bar-3 {
   animation-delay: 0.3s;
@@ -1423,7 +1469,7 @@ textarea {
 @keyframes eq-pulse {
   0%,
   100% {
-    transform: scaleY(0.55);
+    transform: scaleY(0.8);
   }
   50% {
     transform: scaleY(1);

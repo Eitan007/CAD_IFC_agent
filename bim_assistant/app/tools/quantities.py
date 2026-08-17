@@ -4,7 +4,7 @@ Deterministic material quantity extraction.
 """
 from __future__ import annotations
 from app.storage.database import get_session
-from app.storage.repository import get_material_summary, get_elements_by_type, get_all_elements
+from app.storage.repository import get_material_summary, get_material_element_types, get_element_counts
 from app.normalization.schema import MaterialQuantity
 
 
@@ -15,15 +15,14 @@ async def tool_get_material_quantities(project_id: str) -> list[dict]:
     """
     async with get_session() as session:
         summary = await get_material_summary(project_id, session)
-
-    # Also collect which element types use each material
-    async with get_session() as session:
-        all_elems = await get_all_elements(project_id, session)
+        raw_mappings = await get_material_element_types(project_id, session)
 
     mat_types: dict[str, set[str]] = {}
-    for e in all_elems:
-        if e.material:
-            mat_types.setdefault(e.material, set()).add(e.type)
+    for row in raw_mappings:
+        mat = row["material"]
+        etype = row["type"]
+        if mat:
+            mat_types.setdefault(mat, set()).add(etype)
 
     results = []
     for row in summary:
@@ -34,7 +33,7 @@ async def tool_get_material_quantities(project_id: str) -> list[dict]:
                 total_volume=round(float(row["total_volume"] or 0), 4),
                 total_area=round(float(row["total_area"] or 0), 4) if row["total_area"] else None,
                 element_count=int(row["element_count"]),
-                element_types=sorted(mat_types.get(mat, [])),
+                element_types=sorted(list(mat_types.get(mat or "unknown", []))),
             ).model_dump()
         )
 
@@ -49,9 +48,5 @@ async def tool_get_element_counts(project_id: str) -> dict[str, int]:
     Useful for quick overview queries.
     """
     async with get_session() as session:
-        all_elems = await get_all_elements(project_id, session)
-
-    counts: dict[str, int] = {}
-    for e in all_elems:
-        counts[e.type] = counts.get(e.type, 0) + 1
+        counts = await get_element_counts(project_id, session)
     return dict(sorted(counts.items(), key=lambda x: x[1], reverse=True))
