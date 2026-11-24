@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
-import { entranceTransition, softContainer, softEntrance, softItem, softPress } from "../utils/motion";
+import { entranceTransition, motionPresets, softContainer, softEntrance, softItem, softPress } from "../utils/motion";
 
 function UploadIcon() {
   return (
@@ -41,6 +41,7 @@ export function UploadPage() {
   const SAMPLE_IFC_PROJECT_ID = "sample-basichouse";
   const SAMPLE_STEP_PROJECT_ID = "sample-step-bolt";
   const SAMPLE_THREADED_STEP_PROJECT_ID = "sample-threaded-step-bolt";
+  const hoverTransition = { duration: 0.2, ease: "easeOut" as const };
 
   const onFiles = useCallback(
     async (files: FileList | null) => {
@@ -87,6 +88,7 @@ export function UploadPage() {
         variants={softContainer}
         initial="hidden"
         animate="show"
+        whileHover={busy ? undefined : { y: -4, transition: hoverTransition }}
         whileTap={busy ? undefined : softPress}
         transition={entranceTransition}
         onDragOver={(e) => {
@@ -133,6 +135,7 @@ export function UploadPage() {
             type="button"
             className="upload-action-btn upload-action-btn--sample"
             disabled={busy}
+            whileHover={busy ? undefined : { y: -2, transition: hoverTransition }}
             whileTap={busy ? undefined : softPress}
             onClick={onSelectSample(SAMPLE_IFC_PROJECT_ID)}
           >
@@ -144,6 +147,7 @@ export function UploadPage() {
             type="button"
             className="upload-action-btn upload-action-btn--sample"
             disabled={busy}
+            whileHover={busy ? undefined : { y: -2, transition: hoverTransition }}
             whileTap={busy ? undefined : softPress}
             onClick={onSelectSample(SAMPLE_STEP_PROJECT_ID)}
           >
@@ -155,6 +159,7 @@ export function UploadPage() {
             type="button"
             className="upload-action-btn upload-action-btn--sample"
             disabled={busy}
+            whileHover={busy ? undefined : { y: -2, transition: hoverTransition }}
             whileTap={busy ? undefined : softPress}
             onClick={onSelectSample(SAMPLE_THREADED_STEP_PROJECT_ID)}
           >
@@ -163,11 +168,13 @@ export function UploadPage() {
           </motion.button>
         </motion.div>
 
-        {localError && (
-          <motion.p className="upload-glass-card-error" initial="hidden" animate="show" variants={softItem} transition={entranceTransition}>
-            {localError}
-          </motion.p>
-        )}
+        <AnimatePresence mode="wait">
+          {localError && (
+            <motion.p key="upload-error" className="upload-glass-card-error" {...motionPresets.contentSwap}>
+              {localError}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         <div className="glass-card-dots" aria-hidden="true" />
       </motion.label>

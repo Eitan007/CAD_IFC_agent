@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { enqueueProcess, getPipelineStatus } from "../api/client";
 import type { PipelineStatus } from "../api/types";
 import { CADViewer } from "../components/CADViewer";
@@ -10,7 +10,8 @@ import { WorkspaceComposer } from "../components/WorkspaceComposer";
 import { useBackgroundUpload } from "../hooks/useBackgroundUpload";
 import { useConversationStore } from "../stores/conversationStore";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
-import { entranceTransition, softEntrance } from "../utils/motion";
+import { motionPresets } from "../utils/motion";
+import { IconArrowLeft } from "../components/WorkspaceIcons";
 
 export function ProjectWorkspace() {
   const { projectId } = useParams();
@@ -81,7 +82,7 @@ export function ProjectWorkspace() {
   }
 
   return (
-    <motion.div className="ws-root" initial="hidden" animate="show" variants={softEntrance} transition={entranceTransition}>
+    <motion.div className="ws-root" {...motionPresets.contentSwap}>
       {/* <WorkspaceSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -108,6 +109,15 @@ export function ProjectWorkspace() {
           previewError={statusQuery.data?.preview_error}
         />
       </section>
+
+      <Link
+        to="/"
+        className="ws-back-link"
+        aria-label="Back to sample selection and upload"
+      >
+        <IconArrowLeft />
+        <span>Projects</span>
+      </Link>
 
       {/* Hamburger menu button - top left */}
       {/* <motion.button
