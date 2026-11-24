@@ -12,11 +12,18 @@ import { entranceTransition, softItem } from "../utils/motion";
 const WASM_PATH = `${import.meta.env.BASE_URL}wasm/`;
 
 // --- TWEAKABLE CAMERA SETTINGS ---
-// Tweak these coordinate values (multipliers based on the model's size) 
-// to get the desired starting camera position.
+// These values define the opening viewing angle. The camera distance is
+// calculated from the model bounds and viewport, so every model is framed.
 const CAMERA_START_X = 1.4;
 const CAMERA_START_Y = 0.4;
 const CAMERA_START_Z = 1.4;
+// A generous margin prevents tall or irregular CAD geometry from touching the
+// lower viewport edge after perspective projection.
+const CAMERA_FIT_MARGIN = 1.35;
+// Keep the model centred in the left three-quarters of the full canvas so it
+// remains clear of the conversation panel on the right.
+const MODEL_VIEWPORT_WIDTH = 0.75;
+const MODEL_VIEWPORT_OFFSET_X = (1 - MODEL_VIEWPORT_WIDTH) / 2;
 
 // ---------------------------------
 
@@ -50,17 +57,32 @@ function fitCameraToModel(
   controls: OrbitControls,
   root: THREE.Object3D,
 ) {
-  const box = new THREE.Box3().setFromObject(root);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const radius = Math.max(size.x, size.y, size.z) || 10;
+  // Put the actual geometry centre at the world origin before measuring its
+  // final bounds. This avoids CAD exports opening offset from the orbit target.
+  const initialBounds = new THREE.Box3().setFromObject(root);
+  root.position.sub(initialBounds.getCenter(new THREE.Vector3()));
+  root.updateMatrixWorld(true);
 
-  root.position.sub(center); // Center the model
-  
-  controls.target.set(0, 0, 0);
-  camera.position.set(radius * CAMERA_START_X, radius * CAMERA_START_Y, radius * CAMERA_START_Z);
-  camera.near = Math.max(0.01, radius / 500);
-  camera.far = radius * 500;
+  const bounds = new THREE.Box3().setFromObject(root);
+  const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+  const radius = Math.max(sphere.radius, 0.01);
+
+  // Fit the bounding sphere to whichever camera dimension is tighter. This
+  // keeps the model centred on both wide and tall viewports, with a little
+  // visual breathing room instead of requiring an initial drag to find it.
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+  const usableHorizontalFov = 2 * Math.atan(
+    Math.tan(horizontalFov / 2) * MODEL_VIEWPORT_WIDTH,
+  );
+  const limitingFov = Math.min(verticalFov, usableHorizontalFov);
+  const distance = (radius / Math.sin(limitingFov / 2)) * CAMERA_FIT_MARGIN;
+  const direction = new THREE.Vector3(CAMERA_START_X, CAMERA_START_Y, CAMERA_START_Z).normalize();
+
+  controls.target.copy(sphere.center);
+  camera.position.copy(sphere.center).addScaledVector(direction, distance);
+  camera.near = Math.max(0.01, distance - radius * 2);
+  camera.far = distance + radius * 20;
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -126,7 +148,11 @@ export function CADViewer({ projectId, sourceFormat, previewStatus, previewError
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
+      // Render the full canvas, but offset its optical centre so the model sits
+      // at 37.5% of the screen width: the centre of the left 75% safe area.
+      camera.setViewOffset(w, h, w * MODEL_VIEWPORT_OFFSET_X, 0, w, h);
       camera.updateProjectionMatrix();
+      if (modelRoot && controls) fitCameraToModel(camera, controls, modelRoot);
     };
 
     const pick = (ev: PointerEvent) => {
