@@ -39,6 +39,16 @@ npm run dev
 
 Open http://localhost:5173 — Vite proxies `/api` to port 8000.
 
+## Vercel tunnel from WSL
+
+After installing and authenticating [ngrok](https://ngrok.com/docs/getting-started/) in Windows PowerShell, start the full local stack and tunnel with:
+
+```bash
+./start_main.sh
+```
+
+It opens a separate Windows PowerShell window running `ngrok http 8000`, then starts the normal `start_dev.sh` tmux session. Keep the ngrok window open while Vercel needs access to the local API.
+
 ## Env checklist
 
 | Where | Variables |
