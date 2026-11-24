@@ -14,11 +14,11 @@ export function SidebarManager() {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
 
-  const hasLocalIfc = !!useProjectSessionStore((s) => s.localIfcBuffers[pid]);
+  const hasLocalModel = !!useProjectSessionStore((s) => s.localModelFiles[pid]);
   const uploadPhase = useProjectSessionStore((s) => s.uploadPhase[pid]);
   const uploadError = useProjectSessionStore((s) => s.uploadError[pid]);
 
-  const statusQueryEnabled = !!pid && (!hasLocalIfc || uploadPhase === "done");
+  const statusQueryEnabled = !!pid && (!hasLocalModel || uploadPhase === "done");
 
   const statusQuery = useQuery({
     queryKey: ["pipeline-status", pid],
@@ -40,14 +40,14 @@ export function SidebarManager() {
   });
 
   useEffect(() => {
-    if (!pid || hasLocalIfc) return;
+    if (!pid || hasLocalModel) return;
     const st = statusQuery.data?.status as PipelineStatus | undefined;
     if (st !== "idle" && st !== "received") return;
     if (processMutation.isPending) return;
     if (enqueueAttempts.current >= 5) return;
     enqueueAttempts.current += 1;
     processMutation.mutate();
-  }, [hasLocalIfc, pid, uploadPhase, statusQuery.data?.status, processMutation]);
+  }, [hasLocalModel, pid, uploadPhase, statusQuery.data?.status, processMutation]);
 
   const modelQuery = useQuery({
     queryKey: ["processed-model", pid],

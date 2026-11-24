@@ -4,15 +4,14 @@ bim_assistant/.env.*
 !bim_assistant/.env.example
 frontend/.env
 frontend/.env.*
-livekit-voice-agent/.env
-livekit-voice-agent/.env.*
 !frontend/.env.example
 
 
 # Frontend (Vite / npm)
-frontend/node_modules/1
+frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/tsconfig.tsbuildinfo
 
 # Python (bim_assistant)
 **/__pycache__/
@@ -29,18 +28,13 @@ ignore_this.md
 bim_assistant/data/uploads/
 bim_assistant/data/processed/
 bim_assistant/data/chroma/
+bim_assistant/data/traces/
 
 # IDE / OS
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
-livekit-voice-agent/.venv
-livekit-voice-agent/.env
-livekit-voice-agent/.env.*
-!livekit-voice-agent/KMS
 
-# frontend
-node_modules
-dist
+# Local overrides
 *.local

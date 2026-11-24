@@ -1,7 +1,9 @@
 import type {
   BuildingModelJson,
   ChatResponsePayload,
+  MonitoringSummary,
   PipelineStatusPayload,
+  SampleEvaluation,
 } from "./types";
 import { gzipCompress } from "../utils/gzip";
 
@@ -29,7 +31,7 @@ async function readError(res: Response): Promise<string> {
   }
 }
 
-export async function uploadIfc(file: File): Promise<{ project_id: string }> {
+export async function uploadModel(file: File): Promise<{ project_id: string }> {
   const body = new FormData();
   body.append("file", file);
   const res = await fetch(`${API_BASE}/api/projects/upload`, {
@@ -42,7 +44,7 @@ export async function uploadIfc(file: File): Promise<{ project_id: string }> {
 }
 
 /** Gzip upload to a pre-assigned project id (local preview + background sync). */
-export async function uploadIfcProject(
+export async function uploadModelProject(
   projectId: string,
   file: File,
   opts?: { onProgress?: (percent: number) => void },
@@ -56,7 +58,7 @@ export async function uploadIfcProject(
   const headers: Record<string, string> = {
     ...EXTRA_HEADERS,
     "Content-Type": "application/octet-stream",
-    "X-Filename": file.name || "model.ifc",
+    "X-Filename": file.name || "model",
   };
   if (useGzip) headers["Content-Encoding"] = "gzip";
 
@@ -116,7 +118,7 @@ export async function getProcessedModel(projectId: string): Promise<BuildingMode
 
 export async function sendChat(
   projectId: string,
-  body: { message: string; selected_element?: string | null },
+  body: { message: string; selected_element?: string | null; history?: Array<{ role: "user" | "assistant"; content: string }> },
   signal?: AbortSignal,
 ): Promise<ChatResponsePayload> {
   const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/chat`, {
@@ -129,6 +131,18 @@ export async function sendChat(
   return res.json();
 }
 
+export async function getMonitoringSummary(): Promise<MonitoringSummary> {
+  const res = await fetch(`${API_BASE}/api/monitoring/summary`, { headers: { ...EXTRA_HEADERS } });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function getSampleEvaluation(): Promise<SampleEvaluation> {
+  const res = await fetch(`${API_BASE}/api/monitoring/evaluations/samples`, { headers: { ...EXTRA_HEADERS } });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
 export async function fetchIfcBuffer(projectId: string): Promise<ArrayBuffer> {
   const url = `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/ifc`;
   const res = await fetch(url, { headers: { ...EXTRA_HEADERS } });
@@ -136,28 +150,9 @@ export async function fetchIfcBuffer(projectId: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
-/** @deprecated Viewer uses IFC directly; GLB may still be generated in background. */
 export async function fetchGlbBuffer(projectId: string): Promise<ArrayBuffer> {
   const url = `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/glb`;
   const res = await fetch(url, { headers: { ...EXTRA_HEADERS } });
   if (!res.ok) throw new Error(`GLB fetch failed: ${res.status} ${res.statusText}`);
   return res.arrayBuffer();
-}
-
-export type VoiceTokenPayload = {
-  token: string;
-  url: string;
-  room_name: string;
-};
-
-export async function getVoiceToken(projectId: string): Promise<VoiceTokenPayload> {
-  const res = await fetch(
-    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/voice/token`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...EXTRA_HEADERS },
-    },
-  );
-  if (!res.ok) throw new Error(await readError(res));
-  return res.json();
 }

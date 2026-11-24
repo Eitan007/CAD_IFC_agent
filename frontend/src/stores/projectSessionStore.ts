@@ -3,39 +3,42 @@ import { create } from "zustand";
 export type UploadPhase = "idle" | "uploading" | "done" | "error";
 
 type ProjectSessionState = {
-  /** In-memory IFC bytes for local preview (skip /ifc fetch). */
+  /** In-memory IFC bytes for local 3D preview (skip /ifc fetch). */
   localIfcBuffers: Record<string, ArrayBuffer>;
-  localIfcFiles: Record<string, File>;
+  localModelFiles: Record<string, File>;
   uploadPhase: Record<string, UploadPhase>;
   uploadProgress: Record<string, number>;
   uploadError: Record<string, string | null>;
 
-  setLocalIfc: (projectId: string, file: File) => Promise<void>;
+  setLocalModel: (projectId: string, file: File) => Promise<void>;
   getLocalIfcBuffer: (projectId: string) => ArrayBuffer | undefined;
-  getLocalIfcFile: (projectId: string) => File | undefined;
+  getLocalModelFile: (projectId: string) => File | undefined;
   setUploadPhase: (projectId: string, phase: UploadPhase, progress?: number, error?: string | null) => void;
   clearProject: (projectId: string) => void;
 };
 
 export const useProjectSessionStore = create<ProjectSessionState>((set, get) => ({
   localIfcBuffers: {},
-  localIfcFiles: {},
+  localModelFiles: {},
   uploadPhase: {},
   uploadProgress: {},
   uploadError: {},
 
-  setLocalIfc: async (projectId, file) => {
-    const buffer = await file.arrayBuffer();
+  setLocalModel: async (projectId, file) => {
+    const isIfc = file.name.toLowerCase().endsWith(".ifc");
+    const buffer = isIfc ? await file.arrayBuffer() : undefined;
     set((s) => ({
-      localIfcBuffers: { ...s.localIfcBuffers, [projectId]: buffer },
-      localIfcFiles: { ...s.localIfcFiles, [projectId]: file },
+      localIfcBuffers: buffer
+        ? { ...s.localIfcBuffers, [projectId]: buffer }
+        : Object.fromEntries(Object.entries(s.localIfcBuffers).filter(([id]) => id !== projectId)),
+      localModelFiles: { ...s.localModelFiles, [projectId]: file },
       uploadPhase: { ...s.uploadPhase, [projectId]: "idle" },
       uploadProgress: { ...s.uploadProgress, [projectId]: 0 },
       uploadError: { ...s.uploadError, [projectId]: null },
     }));
   },
 
-  getLocalIfcFile: (projectId) => get().localIfcFiles[projectId],
+  getLocalModelFile: (projectId) => get().localModelFiles[projectId],
 
   getLocalIfcBuffer: (projectId) => get().localIfcBuffers[projectId],
 
@@ -50,11 +53,11 @@ export const useProjectSessionStore = create<ProjectSessionState>((set, get) => 
   clearProject: (projectId) => {
     set((s) => {
       const { [projectId]: _b, ...localIfcBuffers } = s.localIfcBuffers;
-      const { [projectId]: _f, ...localIfcFiles } = s.localIfcFiles;
+      const { [projectId]: _f, ...localModelFiles } = s.localModelFiles;
       const { [projectId]: _p, ...uploadPhase } = s.uploadPhase;
       const { [projectId]: _g, ...uploadProgress } = s.uploadProgress;
       const { [projectId]: _e, ...uploadError } = s.uploadError;
-      return { localIfcBuffers, localIfcFiles, uploadPhase, uploadProgress, uploadError };
+      return { localIfcBuffers, localModelFiles, uploadPhase, uploadProgress, uploadError };
     });
   },
 }));

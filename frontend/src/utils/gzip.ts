@@ -1,4 +1,4 @@
-/** Gzip-compress bytes for faster upload (IFC may only shrink modestly). */
+/** Gzip-compress model bytes for faster upload. */
 export async function gzipCompress(input: ArrayBuffer): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     return new Uint8Array(input);

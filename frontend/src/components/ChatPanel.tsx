@@ -16,7 +16,7 @@ type Msg = {
 type Props = {
   projectId: string;
   chatEnabled: boolean;
-  /** When true, omit outer glass shell (used inside AgentPanel). */
+  /** When true, omit the outer glass shell for an embedded layout. */
   embedded?: boolean;
 };
 

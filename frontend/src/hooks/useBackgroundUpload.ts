@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import { enqueueProcess, uploadIfcProject } from "../api/client";
+import { enqueueProcess, uploadModelProject } from "../api/client";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
 
-/** Gzip upload + enqueue parse after local preview session starts. */
+/** Gzip upload + enqueue parse after a local session starts. */
 export function useBackgroundUpload(projectId: string) {
-  const file = useProjectSessionStore((s) => s.localIfcFiles[projectId]);
+  const file = useProjectSessionStore((s) => s.localModelFiles[projectId]);
   const uploadPhase = useProjectSessionStore((s) => s.uploadPhase[projectId]);
   const setUploadPhase = useProjectSessionStore((s) => s.setUploadPhase);
   const started = useRef(false);
@@ -19,7 +19,7 @@ export function useBackgroundUpload(projectId: string) {
 
     void (async () => {
       try {
-        await uploadIfcProject(projectId, file, {
+        await uploadModelProject(projectId, file, {
           onProgress: (pct) => setUploadPhase(projectId, "uploading", pct, null),
         });
         setUploadPhase(projectId, "done", 100, null);

@@ -1,15 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { enqueueProcess, getPipelineStatus } from "../api/client";
 import type { PipelineStatus } from "../api/types";
 import { CADViewer } from "../components/CADViewer";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { WorkspaceComposer } from "../components/WorkspaceComposer";
-import type { ComposerMode } from "../components/WorkspaceComposer.types";
 import { useBackgroundUpload } from "../hooks/useBackgroundUpload";
-import { endVoiceSession } from "../lib/voiceRoomManager";
 import { useConversationStore } from "../stores/conversationStore";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
 import { entranceTransition, softEntrance } from "../utils/motion";
@@ -17,31 +15,23 @@ import { entranceTransition, softEntrance } from "../utils/motion";
 export function ProjectWorkspace() {
   const { projectId } = useParams();
   const pid = projectId ?? "";
-  const resetConversation = useConversationStore((s) => s.resetConversation);
+  const loadConversation = useConversationStore((s) => s.loadConversation);
 
-  const hasLocalIfc = !!useProjectSessionStore((s) => s.localIfcBuffers[pid]);
+  const localModel = useProjectSessionStore((s) => s.localModelFiles[pid]);
+  const hasLocalModel = !!localModel;
   const uploadPhase = useProjectSessionStore((s) => s.uploadPhase[pid]);
   const uploadError = useProjectSessionStore((s) => s.uploadError[pid]);
 
   useBackgroundUpload(pid);
 
-  const [composerMode, setComposerMode] = useState<ComposerMode>("text");
-
   const enqueueAttempts = useRef(0);
 
   useEffect(() => {
-    resetConversation();
+    if (pid) loadConversation(pid);
     enqueueAttempts.current = 0;
-    setComposerMode("text");
-  }, [pid, resetConversation]);
+  }, [pid, loadConversation]);
 
-  useEffect(() => {
-    return () => {
-      void endVoiceSession(pid);
-    };
-  }, [pid]);
-
-  const statusQueryEnabled = !!pid && (!hasLocalIfc || uploadPhase === "done");
+  const statusQueryEnabled = !!pid && (!hasLocalModel || uploadPhase === "done");
 
   const statusQuery = useQuery({
     queryKey: ["pipeline-status", pid],
@@ -67,14 +57,14 @@ export function ProjectWorkspace() {
   );
 
   useEffect(() => {
-    if (hasLocalIfc) return;
+    if (hasLocalModel) return;
     const st = statusQuery.data?.status as PipelineStatus | undefined;
     if (st !== "idle" && st !== "received") return;
     if (processMutation.isPending) return;
     if (enqueueAttempts.current >= 5) return;
     enqueueAttempts.current += 1;
     processMutation.mutate();
-  }, [hasLocalIfc, pid, uploadPhase, statusQuery.data?.status, processMutation]);
+  }, [hasLocalModel, pid, statusQuery.data?.status, processMutation]);
 
   const pipelineStatus = statusQuery.data?.status as PipelineStatus | undefined;
   const chatEnabled =
@@ -111,7 +101,12 @@ export function ProjectWorkspace() {
 
       {/* Full-page CAD canvas */}
       <section className="ws-viewer-card">
-        <CADViewer projectId={pid} />
+        <CADViewer
+          projectId={pid}
+          sourceFormat={localModel?.name.split(".").pop() ?? statusQuery.data?.source_format}
+          previewStatus={statusQuery.data?.preview_status}
+          previewError={statusQuery.data?.preview_error}
+        />
       </section>
 
       {/* Hamburger menu button - top left */}
@@ -140,8 +135,6 @@ export function ProjectWorkspace() {
           statusQuery.error?.message ??
           processMutation.error?.message
         }
-        mode={composerMode}
-        onModeChange={setComposerMode}
       />
     </motion.div>
   );

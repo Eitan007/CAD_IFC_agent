@@ -3,10 +3,9 @@
 # ==============================================================================
 # BIM/CAD Agent Development Environment Starter
 # ==============================================================================
-# This script uses tmux to open three panes in a single terminal session:
-# 1. LiveKit Voice Agent
-# 2. Frontend (Vite)
-# 3. BIM Assistant Backend (FastAPI)
+# This script uses tmux to open two panes in a single terminal session:
+# 1. Frontend (Vite)
+# 2. BIM Assistant Backend (FastAPI)
 #
 # It also opens the frontend in your default browser.
 # ==============================================================================
@@ -20,23 +19,32 @@ if ! command -v tmux &> /dev/null; then
     exit 1
 fi
 
+# The local API is configured to use Neo4j at localhost:7687.  Compose starts
+# that database in Docker and waits for its health check before we start the API.
+if ! command -v docker &> /dev/null; then
+    echo "Error: Docker is not installed or not available in this WSL terminal."
+    exit 1
+fi
+
+echo "Starting Neo4j database..."
+if ! (cd "$REPO_ROOT/bim_assistant" && docker compose up -d --wait neo4j); then
+    echo "Error: Neo4j could not start. Make sure Docker Desktop is running, then try again."
+    exit 1
+fi
+
 # Kill existing session if it exists to start fresh
 tmux kill-session -t $SESSION 2>/dev/null
 
 echo "Starting BIM/CAD Agent services in tmux session: $SESSION..."
 
-# 1. Create session and start Voice Agent in the first pane
+# 1. Create session and start the frontend in the first pane
 tmux new-session -d -s $SESSION -n 'dev'
 tmux set-option -t $SESSION mouse on
-tmux send-keys -t $SESSION:0 "cd $REPO_ROOT/livekit-voice-agent && source .venv/bin/activate && export BIM_API_BASE=http://127.0.0.1:8000 && uv run agent.py dev" C-m
+tmux send-keys -t $SESSION:0 "cd $REPO_ROOT/frontend && npm run dev" C-m
 
-# 2. Split vertically for the Frontend
+# 2. Split vertically for the backend API
 tmux split-window -v -t $SESSION:0
-tmux send-keys -t $SESSION:0.1 "cd $REPO_ROOT/frontend && npm run dev" C-m
-
-# 3. Split horizontally for the Backend API
-tmux split-window -h -t $SESSION:0.1
-tmux send-keys -t $SESSION:0.2 "cd $REPO_ROOT/bim_assistant && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" C-m
+tmux send-keys -t $SESSION:0.1 "cd $REPO_ROOT/bim_assistant && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" C-m
 
 # Open the browser (using explorer.exe for WSL -> Windows integration)
 # We run this in the background with a slight delay to allow Vite to initialize.

@@ -33,12 +33,14 @@ function SparklesIcon() {
 
 export function UploadPage() {
   const navigate = useNavigate();
-  const setLocalIfc = useProjectSessionStore((s) => s.setLocalIfc);
+  const setLocalModel = useProjectSessionStore((s) => s.setLocalModel);
   const [drag, setDrag] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
 
-  const SAMPLE_PROJECT_ID = "sample-basichouse";
+  const SAMPLE_IFC_PROJECT_ID = "sample-basichouse";
+  const SAMPLE_STEP_PROJECT_ID = "sample-step-bolt";
+  const SAMPLE_THREADED_STEP_PROJECT_ID = "sample-threaded-step-bolt";
 
   const onFiles = useCallback(
     async (files: FileList | null) => {
@@ -47,30 +49,31 @@ export function UploadPage() {
 
       setLocalError(null);
 
-      if (!file.name.toLowerCase().endsWith(".ifc")) {
-        setLocalError("Only .ifc files are supported.");
+      const fileName = file.name.toLowerCase();
+      if (!fileName.endsWith(".ifc") && !fileName.endsWith(".step") && !fileName.endsWith(".stp")) {
+        setLocalError("Choose an IFC, STEP, or STP file.");
         return;
       }
 
       setOpening(true);
       try {
         const projectId = crypto.randomUUID();
-        await setLocalIfc(projectId, file);
+        await setLocalModel(projectId, file);
         navigate(`/project/${encodeURIComponent(projectId)}`, { replace: true });
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : String(err));
         setOpening(false);
       }
     },
-    [navigate, setLocalIfc],
+    [navigate, setLocalModel],
   );
 
   const onSelectSample = useCallback(
-    (e: React.MouseEvent) => {
+    (projectId: string) => (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setOpening(true);
-      navigate(`/project/${encodeURIComponent(SAMPLE_PROJECT_ID)}`, { replace: true });
+      navigate(`/project/${encodeURIComponent(projectId)}`, { replace: true });
     },
     [navigate],
   );
@@ -99,7 +102,7 @@ export function UploadPage() {
       >
         <input
           type="file"
-          accept=".ifc"
+          accept=".ifc,.step,.stp"
           className="upload-glass-card-input"
           disabled={busy}
           onChange={(e) => void onFiles(e.target.files)}
@@ -113,11 +116,11 @@ export function UploadPage() {
         </motion.div>
 
         <motion.h1 className="upload-glass-card-title" variants={softEntrance} transition={entranceTransition}>
-          {busy ? "Opening workspace…" : "Drag and drop your IFC file here, or click to browse."}
+          {busy ? "Opening workspace…" : "Drag and drop an IFC, STEP, or STP file here, or click to browse."}
         </motion.h1>
 
         <motion.p className="upload-glass-card-hint muted" variants={softItem} transition={entranceTransition}>
-          Building models only • .ifc • max ~500 MB • preview starts instantly, syncs in background
+          IFC, STEP, STP • max ~500 MB • IFC opens right away; STEP/STP gets a browser-ready 3D preview
         </motion.p>
 
         <motion.div className="upload-glass-card-actions" variants={softItem} transition={entranceTransition}>
@@ -131,10 +134,32 @@ export function UploadPage() {
             className="upload-action-btn upload-action-btn--sample"
             disabled={busy}
             whileTap={busy ? undefined : softPress}
-            onClick={onSelectSample}
+            onClick={onSelectSample(SAMPLE_IFC_PROJECT_ID)}
           >
             <SparklesIcon />
-            <span>Try Sample Model</span>
+            <span>Try IFC House</span>
+          </motion.button>
+
+          <motion.button
+            type="button"
+            className="upload-action-btn upload-action-btn--sample"
+            disabled={busy}
+            whileTap={busy ? undefined : softPress}
+            onClick={onSelectSample(SAMPLE_STEP_PROJECT_ID)}
+          >
+            <SparklesIcon />
+            <span>Try STEP Bolt</span>
+          </motion.button>
+
+          <motion.button
+            type="button"
+            className="upload-action-btn upload-action-btn--sample"
+            disabled={busy}
+            whileTap={busy ? undefined : softPress}
+            onClick={onSelectSample(SAMPLE_THREADED_STEP_PROJECT_ID)}
+          >
+            <SparklesIcon />
+            <span>Try Threaded Bolt</span>
           </motion.button>
         </motion.div>
 

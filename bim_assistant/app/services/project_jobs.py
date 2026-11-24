@@ -9,14 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.ingestion.ifc_to_glb import project_glb_path, run_ifc_glb_export
+from app.ingestion.ifc_to_glb import project_glb_path
 from app.ingestion.pipeline import run_ingestion_pipeline
+from app.ingestion.step_to_glb import run_step_glb_export
 from app.storage.database import get_session
 from app.storage.repository import save_building_model
 
 logger = logging.getLogger(__name__)
 
 SAMPLE_PROJECT_ID = "sample-basichouse"
+SAMPLE_STEP_PROJECT_ID = "sample-step-bolt"
+SAMPLE_THREADED_STEP_PROJECT_ID = "sample-threaded-step-bolt"
 
 _lock = asyncio.Lock()
 _jobs: dict[str, dict[str, Any]] = {}
@@ -34,35 +37,16 @@ async def get_job(project_id: str) -> dict[str, Any]:
         return dict(_jobs.get(project_id, {}))
 
 
-async def _export_glb_background(project_id: str, input_path: Path) -> None:
-    """Optional server-side GLB; does not block chat or IFC viewer."""
-    settings = get_settings()
-    if input_path.suffix.lower() != ".ifc":
-        return
-    glb_path = project_glb_path(Path(settings.processed_dir), project_id)
-    try:
-        await run_ifc_glb_export(input_path, glb_path)
-        await merge_job(project_id, glb_ready=True)
-        logger.info("GLB ready (background) project_id=%s", project_id)
-    except Exception as exc:
-        logger.warning("GLB background export failed project_id=%s: %s", project_id, exc)
-
-
 async def execute_pipeline_job(project_id: str) -> None:
     settings = get_settings()
     await merge_job(project_id, status="processing", error=None, graph_ready=False, json_ready=False)
 
     upload_dir = Path(settings.upload_dir) / project_id
-    if not upload_dir.exists():
+    candidates = list(upload_dir.iterdir()) if upload_dir.exists() else []
+    input_path = candidates[0] if candidates else bundled_sample_path(project_id)
+    if input_path is None:
         await merge_job(project_id, status="failed", error="Upload not found.")
         return
-
-    candidates = list(upload_dir.iterdir())
-    if not candidates:
-        await merge_job(project_id, status="failed", error="Upload directory empty.")
-        return
-
-    input_path = candidates[0]
 
     try:
         model = await run_ingestion_pipeline(input_path, project_id=project_id)
@@ -83,6 +67,21 @@ async def execute_pipeline_job(project_id: str) -> None:
             model.element_count,
         )
 
+        if input_path.suffix.lower() in {".step", ".stp"}:
+            await merge_job(project_id, preview_status="processing", preview_error=None)
+            try:
+                glb_path = processed_glb_path(project_id)
+                await run_step_glb_export(input_path, glb_path)
+                await merge_job(project_id, preview_status="ready")
+                logger.info("STEP GLB ready project_id=%s", project_id)
+            except Exception as exc:
+                logger.warning("STEP GLB export failed project_id=%s: %s", project_id, exc)
+                await merge_job(
+                    project_id,
+                    preview_status="failed",
+                    preview_error="We could not make a 3D preview from this STEP/STP file.",
+                )
+
         try:
             processed_path = Path(settings.processed_dir) / f"{project_id}.json"
             processed_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,8 +91,6 @@ async def execute_pipeline_job(project_id: str) -> None:
         except Exception as exc:
             logger.warning("JSON write failed project_id=%s: %s", project_id, exc)
             # Chat stays available; filters wait for JSON retry / manual fix.
-
-        # asyncio.create_task(_export_glb_background(project_id, input_path))
 
     except Exception as exc:
         logger.exception("Pipeline failed project_id=%s", project_id)
@@ -110,6 +107,22 @@ def processed_glb_path(project_id: str) -> Path:
 
 def upload_root(project_id: str) -> Path:
     return Path(get_settings().upload_dir) / project_id
+
+
+def bundled_sample_path(project_id: str) -> Path | None:
+    """Return a demo source bundled with the app, if this is a demo project."""
+    bim_root = Path(__file__).resolve().parents[2]
+    if project_id == SAMPLE_STEP_PROJECT_ID:
+        path = bim_root / "samples" / "HexBolt.step"
+        return path if path.is_file() else None
+    if project_id == SAMPLE_THREADED_STEP_PROJECT_ID:
+        path = bim_root / "samples" / "ThreadedHexBolt.step"
+        return path if path.is_file() else None
+    if project_id == SAMPLE_PROJECT_ID:
+        for path in (bim_root / "samples" / "BasicHouse.ifc", bim_root.parent / "BasicHouse.ifc"):
+            if path.is_file():
+                return path
+    return None
 
 
 def _build_status_payload(project_id: str, job: dict[str, Any]) -> dict[str, Any]:
@@ -132,6 +145,10 @@ def _build_status_payload(project_id: str, job: dict[str, Any]) -> dict[str, Any
         out["element_count"] = job["element_count"]
     if job.get("error"):
         out["error"] = job["error"]
+    if job.get("preview_status"):
+        out["preview_status"] = job["preview_status"]
+    if job.get("preview_error"):
+        out["preview_error"] = job["preview_error"]
     return out
 
 
@@ -144,18 +161,39 @@ async def resolve_pipeline_status(project_id: str) -> dict[str, Any]:
 
     proc = processed_json_path(project_id)
     if proc.exists():
-        return {
+        uploaded = upload_root(project_id)
+        files = list(uploaded.iterdir()) if uploaded.exists() else []
+        source = files[0] if files else bundled_sample_path(project_id)
+        is_step = source is not None and source.suffix.lower() in {".step", ".stp"}
+        result: dict[str, Any] = {
             "status": "completed",
             "project_id": project_id,
             "graph_ready": True,
             "json_ready": True,
         }
+        if is_step:
+            if processed_glb_path(project_id).is_file():
+                result["preview_status"] = "ready"
+            else:
+                result["preview_status"] = "failed"
+                result["preview_error"] = "This STEP/STP file needs its 3D preview rebuilt."
+        return result
 
     upload_dir = Path(settings.upload_dir) / project_id
-    if not upload_dir.exists():
+    if not upload_dir.exists() and bundled_sample_path(project_id) is None:
         return {}
 
-    return {"status": "received", "project_id": project_id, "graph_ready": False, "json_ready": False}
+    source_path = bundled_sample_path(project_id)
+    is_step_source = source_path is not None and source_path.suffix.lower() in {".step", ".stp"}
+    result: dict[str, Any] = {
+        "status": "received",
+        "project_id": project_id,
+        "graph_ready": False,
+        "json_ready": False,
+    }
+    if is_step_source:
+        result["preview_status"] = "pending"
+    return result
 
 
 async def mark_upload_received(project_id: str) -> None:
@@ -165,4 +203,6 @@ async def mark_upload_received(project_id: str) -> None:
         graph_ready=False,
         json_ready=False,
         error=None,
+        preview_status="pending",
+        preview_error=None,
     )

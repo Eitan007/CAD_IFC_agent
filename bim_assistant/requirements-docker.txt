@@ -5,10 +5,10 @@ python-multipart==0.0.9
 pydantic==2.7.1
 pydantic-settings==2.2.1
 
-ifcopenshell==0.7.10
+ifcopenshell==0.9.0.post1
 trimesh==4.4.3
 numpy>=1.26.0
-livekit-api>=0.8.0
+cadquery-ocp==8.0.1.1.0
 
 sqlalchemy==2.0.30
 asyncpg==0.29.0
@@ -25,3 +25,8 @@ aiofiles==23.2.1
 python-dotenv==1.0.1
 structlog==24.1.0
 tenacity==8.3.0
+
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+openinference-instrumentation-anthropic==1.1.2
+requests==2.34.2

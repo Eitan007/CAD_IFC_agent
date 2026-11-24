@@ -9,12 +9,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api import upload, process, query, tasks, projects
+from app.api import upload, process, query, tasks, projects, traces, monitoring
 from app.storage.database import init_db
 from app.utils.logging import configure_logging
+from app.observability import configure_tracing
 
 settings = get_settings()
 configure_logging()
+configure_tracing()
 
 
 @asynccontextmanager
@@ -46,6 +48,8 @@ app.include_router(process.router, prefix="/process", tags=["Processing"])
 app.include_router(query.router,   prefix="/query",   tags=["Agent"])
 app.include_router(tasks.router,   prefix="/tasks",   tags=["Workflows"])
 app.include_router(projects.router)
+app.include_router(traces.router,  prefix="/traces",  tags=["Observability"])
+app.include_router(monitoring.router)
 
 
 @app.get("/health")

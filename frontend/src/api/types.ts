@@ -14,6 +14,27 @@ export type PipelineStatusPayload = {
   error?: string | null;
   graph_ready?: boolean;
   json_ready?: boolean;
+  source_format?: string | null;
+  preview_status?: string | null;
+  preview_error?: string | null;
+  checks?: DeterministicCheck[];
+};
+
+export type DeterministicCheck = { name: string; passed: boolean; detail: string };
+
+export type MonitoringSummary = {
+  agent_runs: number;
+  failed_runs: number;
+  error_rate: number;
+  average_duration_ms: number;
+  tool_calls: number;
+  formats: Record<string, number>;
+  recent_runs: Array<{ trace_id?: string; query: string; source_format: string; duration_ms: number; status: string; tool_calls: number }>;
+};
+
+export type SampleEvaluation = {
+  cases: Array<{ name: string; score: number; passed: boolean; checks: Array<{ name: string; passed: boolean }> }>;
+  average_score: number;
 };
 
 export type BuildingModelJson = {

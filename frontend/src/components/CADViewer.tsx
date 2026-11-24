@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
-import { fetchIfcBuffer } from "../api/client";
+import { fetchGlbBuffer, fetchIfcBuffer } from "../api/client";
 import { useProjectSessionStore } from "../stores/projectSessionStore";
 import { useUiStore } from "../stores/uiStore";
 import { entranceTransition, softItem } from "../utils/motion";
@@ -17,11 +18,6 @@ const CAMERA_START_X = 1.4;
 const CAMERA_START_Y = 0.4;
 const CAMERA_START_Z = 1.4;
 
-// Tweak these coordinates to adjust the point the camera is looking at.
-// Change these if the model appears off-center (e.g., bottom right).
-const TARGET_CENTER_X = 50;
-const TARGET_CENTER_Y = -10;
-const TARGET_CENTER_Z = 10;
 // ---------------------------------
 
 function extractExpressId(hit: THREE.Intersection): string | null {
@@ -61,7 +57,7 @@ function fitCameraToModel(
 
   root.position.sub(center); // Center the model
   
-  controls.target.set(TARGET_CENTER_X, TARGET_CENTER_Y, TARGET_CENTER_Z);
+  controls.target.set(0, 0, 0);
   camera.position.set(radius * CAMERA_START_X, radius * CAMERA_START_Y, radius * CAMERA_START_Z);
   camera.near = Math.max(0.01, radius / 500);
   camera.far = radius * 500;
@@ -69,16 +65,35 @@ function fitCameraToModel(
   controls.update();
 }
 
-export function CADViewer({ projectId }: { projectId: string }) {
+type CADViewerProps = {
+  projectId: string;
+  sourceFormat?: string | null;
+  previewStatus?: string | null;
+  previewError?: string | null;
+};
+
+export function CADViewer({ projectId, sourceFormat, previewStatus, previewError }: CADViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const setSelectedElementId = useUiStore((s) => s.setSelectedElementId);
   const localBuffer = useProjectSessionStore((s) => s.localIfcBuffers[projectId]);
+  const isIfc = !sourceFormat || sourceFormat.replace(/^\./, "").toLowerCase() === "ifc";
 
-  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [phase, setPhase] = useState<"idle" | "waiting" | "loading" | "ready" | "error">("idle");
   const [errorText, setErrorText] = useState<string | null>(null);
   const [loadPct, setLoadPct] = useState(0);
 
   useEffect(() => {
+    const stepPreviewReady = previewStatus === "ready";
+    if (!isIfc && !stepPreviewReady) {
+      setSelectedElementId(null);
+      setPhase(previewStatus === "failed" ? "error" : "waiting");
+      setErrorText(previewStatus === "failed" ? previewError ?? "We could not make a 3D preview from this STEP/STP file." : null);
+      return undefined;
+    }
+
+    setPhase("idle");
+    setErrorText(null);
+
     const mount = mountRef.current;
     if (!mount) return undefined;
 
@@ -149,13 +164,15 @@ export function CADViewer({ projectId }: { projectId: string }) {
       raf = requestAnimationFrame(loop);
     };
 
-    const loadIfc = async () => {
+    let ticker: ReturnType<typeof setInterval> | undefined;
+
+    const loadModel = async () => {
       setPhase("loading");
       setLoadPct(0);
       setErrorText(null);
 
       let simulatedPct = 0;
-      const ticker = setInterval(() => {
+      ticker = setInterval(() => {
         if (cancelled) {
           clearInterval(ticker);
           return;
@@ -164,27 +181,39 @@ export function CADViewer({ projectId }: { projectId: string }) {
         setLoadPct(Math.round(simulatedPct));
       }, 280);
 
-      let buffer = localBuffer;
-      if (!buffer) {
-        buffer = await fetchIfcBuffer(projectId);
+      if (isIfc) {
+        let buffer = localBuffer;
+        if (!buffer) {
+          buffer = await fetchIfcBuffer(projectId);
+        }
+        if (cancelled) return;
+
+        ifcLoader = new IFCLoader();
+        await ifcLoader.ifcManager.setWasmPath(WASM_PATH);
+        await ifcLoader.ifcManager.applyWebIfcConfig({
+          USE_FAST_BOOLS: true,
+          COORDINATE_TO_ORIGIN: true,
+        });
+        if (cancelled) return;
+
+        const model = await ifcLoader.parse(buffer.slice(0));
+        ifcModelId = model.modelID;
+        modelRoot = model;
+        scene.add(model);
+      } else {
+        const buffer = await fetchGlbBuffer(projectId);
+        if (cancelled) return;
+        const loader = new GLTFLoader();
+        const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
+          loader.parse(buffer, "", resolve, reject);
+        });
+        if (cancelled) return;
+        modelRoot = gltf.scene;
+        scene.add(gltf.scene);
       }
-      if (cancelled) return;
 
-      ifcLoader = new IFCLoader();
-      await ifcLoader.ifcManager.setWasmPath(WASM_PATH);
-      await ifcLoader.ifcManager.applyWebIfcConfig({
-        USE_FAST_BOOLS: true,
-        COORDINATE_TO_ORIGIN: true,
-      });
-      if (cancelled) return;
-
-      const model = await ifcLoader.parse(buffer.slice(0));
       clearInterval(ticker);
-      if (cancelled) return;
-
-      ifcModelId = model.modelID;
-      modelRoot = model;
-      scene.add(model);
+      ticker = undefined;
 
       fitCameraToModel(camera, controls!, modelRoot);
 
@@ -196,10 +225,11 @@ export function CADViewer({ projectId }: { projectId: string }) {
       setPhase("ready");
     };
 
-    // Delay IFC load until slide animation completes (0.9s) to avoid compute contention
+    // Let the workspace slide in before loading a large model.
     const timer = setTimeout(() => {
       if (!cancelled) {
-        void loadIfc().catch((err) => {
+        void loadModel().catch((err) => {
+          if (ticker) clearInterval(ticker);
           if (!cancelled) {
             setPhase("error");
             setErrorText(err instanceof Error ? err.message : String(err));
@@ -211,6 +241,7 @@ export function CADViewer({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      if (ticker) clearInterval(ticker);
       cancelAnimationFrame(raf);
       ro.disconnect();
       try {
@@ -237,7 +268,7 @@ export function CADViewer({ projectId }: { projectId: string }) {
         else mat.dispose();
       });
     };
-  }, [projectId, localBuffer, setSelectedElementId]);
+  }, [projectId, localBuffer, setSelectedElementId, isIfc, previewStatus, previewError]);
 
   return (
     <div className="viewer-pane" style={{ position: "relative", height: "100%" }}>
@@ -254,7 +285,7 @@ export function CADViewer({ projectId }: { projectId: string }) {
                   <div className="viewer-progress-fill" style={{ width: `${loadPct}%` }} />
                 </div>
                 <div className="muted" style={{ textAlign: "center", fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                  {localBuffer ? "Loading local IFC…" : "Loading IFC model…"}
+                  {isIfc ? (localBuffer ? "Loading local IFC…" : "Loading IFC model…") : "Loading STEP/STP preview…"}
                 </div>
               </div>
             </motion.div>
@@ -263,10 +294,23 @@ export function CADViewer({ projectId }: { projectId: string }) {
       </AnimatePresence>
 
       <AnimatePresence>
+        {phase === "waiting" && (
+          <motion.div className="viewer-overlay" initial="hidden" animate="show" exit="exit" variants={softItem} transition={entranceTransition}>
+            <div className="viewer-overlay-inner muted">
+              Making a 3D preview for your STEP/STP file…
+              <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>
+                Think of it like packing a CAD model into a lighter box the browser can open.
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {phase === "error" && (
           <motion.div className="viewer-overlay" initial="hidden" animate="show" exit="exit" variants={softItem} transition={entranceTransition}>
             <div className="viewer-overlay-inner muted">
-              Viewer could not load the IFC model.
+              Viewer could not load this model.
               <div style={{ marginTop: "0.35rem", color: "#fcfefe", fontSize: "0.85rem" }}>{errorText}</div>
             </div>
           </motion.div>

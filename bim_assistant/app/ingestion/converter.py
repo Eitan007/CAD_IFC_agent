@@ -162,36 +162,22 @@ def _convert_dwg_to_ifc(
 
 def convert_step_to_elements(step_path: Path) -> list[dict]:
     """
-    Parse a STEP file via PythonOCC (OpenCascade bindings).
+    Parse a STEP file via Open Cascade bindings.
     Returns a list of raw shape dicts (type, volume, bbox).
-    Requires: conda install -c conda-forge pythonocc-core
+    The app uses cadquery-ocp, the pip-friendly Open Cascade package.
     """
     try:
-        from OCC.Core.STEPControl import STEPControl_Reader  # type: ignore
-        from OCC.Core.BRep import BRep_Builder  # type: ignore
-        from OCC.Core.BRepGProp import brepgprop_VolumeProperties  # type: ignore
-        from OCC.Core.GProp import GProp_GProps  # type: ignore
-        from OCC.Core.IFSelect import IFSelect_RetDone  # type: ignore
+        from app.ingestion.step_to_glb import read_step_shape
 
-        reader = STEPControl_Reader()
-        status = reader.ReadFile(str(step_path))
-        if status != IFSelect_RetDone:
-            raise RuntimeError(f"STEP reader error: status={status}")
-
-        reader.TransferRoots()
-        shape = reader.OneShape()
-
-        # Basic volume extraction
-        props = GProp_GProps()
-        brepgprop_VolumeProperties(shape, props)
-        volume = props.Mass()
-
-        return [{"type": "step_solid", "volume": volume, "source": str(step_path)}]
+        shape = read_step_shape(step_path)
+        if shape.IsNull():
+            return []
+        return [{"type": "step_solid", "source": str(step_path)}]
 
     except ImportError:
         logger.warning(
-            "PythonOCC not installed — STEP geometry extraction disabled. "
-            "Install with: conda install -c conda-forge pythonocc-core"
+            "Open Cascade not installed — STEP geometry extraction disabled. "
+            "Install cadquery-ocp."
         )
         return []
     except Exception as exc:

@@ -1,6 +1,6 @@
 # High-Performance BIM/CAD AI Assistant Architecture
 
-This document outlines a production-grade, horizontally scalable architecture for the **BIM/CAD AI Assistant**. It directly resolves current limitations in CPU bottlenecking, sequential database operations, relational graph query overhead, and voice agent latency.
+This document outlines a production-grade, horizontally scalable architecture for the **BIM/CAD AI Assistant**. It directly resolves current limitations in CPU bottlenecking, sequential database operations, and relational graph query overhead.
 
 ---
 
@@ -20,7 +20,7 @@ graph TD
 * **Neo4j N+1 Sequential Ingestion**: Inserting elements and relationships is done one-by-one (`tx.run()` inside a loop). A model with 100,000 elements triggers 380,000 network roundtrips, causing memory bloat and ingestion durations of 30+ minutes.
 * **Inefficient Postgres Graph Hack**: To traverse element connections under PostgreSQL, the repository loads the entire project data (up to 50,000 rows) into memory and runs a Python BFS loop.
 * **CPU-Bound Geometry Parsing**: Parsing checks geometry and queries property sets (`get_psets()`) sequentially per element. It fails to utilize C++ parallel thread pools and performs duplicate operations.
-* **LLM Chat Loop Latency**: The agent runs a sequential loop querying the LLM up to 8 times for tool execution, making the voice worker stall for up to 15 seconds.
+* **LLM Chat Loop Latency**: The agent runs a sequential loop querying the LLM up to 8 times for tool execution, which can make answers slow.
 
 ---
 
@@ -32,7 +32,7 @@ The proposed architecture decouples compute-intensive tasks, introduces persiste
 graph TB
     Client([User Client]) <-->|HTTP/WS| API[FastAPI Web Server]
     API -->|Write metadata| RDB[(PostgreSQL / SQLite)]
-    API -->|Upload IFC| ObjectStore[(S3 / MinIO)]
+    API -->|Upload model| ObjectStore[(S3 / MinIO)]
     API -->|Enqueue Job| Broker[Redis / RabbitMQ]
     Broker <--> Celery[Celery Workers / Process Pools]
     Celery -->|1. Parallel Parse| Parse[IfcOpenShell C++ Threads]
@@ -290,7 +290,7 @@ async def tool_get_element_counts_optimized(project_id: str) -> dict[str, int]:
 
 ---
 
-## 6. Real-time Agent & Voice Loop Optimizations
+## 6. Agent Response Optimizations
 
 ### Parallel Tool Dispatching
 
@@ -327,4 +327,4 @@ async def run_agent_turn(messages: list[dict], tool_definitions: list) -> dict:
 | **Phase 1: Database & DB-Level Queries** | Implement Neo4j UNWIND batching and PostgreSQL recursive CTEs. Add database indexes on `project_id` and `type`. | Traversal: **2.3s → 0.05s**<br>Neo4j upload: **35min → 45s** |
 | **Phase 2: Task Queue Integration** | Set up Celery and Redis. Move `BackgroundTasks` out of FastAPI to standalone workers. | API Response: **Sub-100ms** (CPU blocking removed) |
 | **Phase 3: Geometry & WebGL Viewer** | Integrate `geom.iterator` for multi-threaded parsing. Implement mesh simplification. | Parsing: **5x faster**<br>GLB asset size: **70% smaller** |
-| **Phase 4: Low-latency Voice Interface** | Implement parallel tool dispatching and streaming chat outputs in `agent.py`. | Voice turn-around: **<2s latency** |
+| **Phase 4: Faster Chat Responses** | Implement parallel tool dispatching and streaming chat outputs in `agent.py`. | Faster responses |

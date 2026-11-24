@@ -9,6 +9,7 @@ import logging
 import shutil
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.agent.agent import run_agent
 from app.config import get_settings
 from app.services import project_jobs
+from app.services.deterministic_checks import build_pipeline_checks, source_format_for_path
 from app.services.project_jobs import processed_glb_path
 from app.storage.database import get_session
 from app.storage.repository import get_project
@@ -26,8 +28,8 @@ router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 settings = get_settings()
 
-MAX_IFC_BYTES = 500 * 1024 * 1024
-ALLOWED_UPLOAD_SUFFIX = ".ifc"
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+ALLOWED_UPLOAD_SUFFIXES = {".ifc", ".step", ".stp"}
 
 
 class UploadProjectResponse(BaseModel):
@@ -45,12 +47,21 @@ class PipelineStatusResponse(BaseModel):
     error: str | None = None
     graph_ready: bool = False
     json_ready: bool = False
+    source_format: str | None = None
+    preview_status: str | None = None
+    preview_error: str | None = None
+    checks: list[dict] = Field(default_factory=list)
+
+
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
     selected_element: str | None = None
-    is_voice: bool = False
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=12)
 
 
 class GraphRef(BaseModel):
@@ -68,27 +79,21 @@ class ChatResponse(BaseModel):
     warning: str | None = None
 
 
-class VoiceTokenResponse(BaseModel):
-    token: str
-    url: str
-    room_name: str
-
-
 def _find_uploaded_file(project_id: str) -> Path:
-    if project_id == project_jobs.SAMPLE_PROJECT_ID:
+    if project_id in {
+        project_jobs.SAMPLE_PROJECT_ID,
+        project_jobs.SAMPLE_STEP_PROJECT_ID,
+        project_jobs.SAMPLE_THREADED_STEP_PROJECT_ID,
+    }:
         # Check standard upload dir or repo root fallback
         root = project_jobs.upload_root(project_id)
         if root.exists():
             files = list(root.iterdir())
             if files:
                 return files[0]
-        # Fallback to repo root or bim_assistant parent BasicHouse.ifc
-        repo_root_ifc = Path(__file__).resolve().parents[3] / "BasicHouse.ifc"
-        if repo_root_ifc.is_file():
-            return repo_root_ifc
-        bim_root_ifc = Path(__file__).resolve().parents[2] / "BasicHouse.ifc"
-        if bim_root_ifc.is_file():
-            return bim_root_ifc
+        sample_path = project_jobs.bundled_sample_path(project_id)
+        if sample_path is not None:
+            return sample_path
 
     root = project_jobs.upload_root(project_id)
     if not root.exists():
@@ -99,15 +104,20 @@ def _find_uploaded_file(project_id: str) -> Path:
     return files[0]
 
 
-@router.post("/upload", response_model=UploadProjectResponse)
-async def upload_project(file: UploadFile = File(...)):
-    """Accept a single .ifc file; returns project_id."""
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix != ALLOWED_UPLOAD_SUFFIX:
+def _validate_upload_filename(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_SUFFIXES:
         raise HTTPException(
             status_code=400,
-            detail=f"Only {ALLOWED_UPLOAD_SUFFIX} uploads are supported.",
+            detail="Only .ifc, .step, and .stp uploads are supported.",
         )
+    return suffix
+
+
+@router.post("/upload", response_model=UploadProjectResponse)
+async def upload_project(file: UploadFile = File(...)):
+    """Accept one IFC, STEP, or STP model and return its project id."""
+    _validate_upload_filename(file.filename or "")
 
     project_id = str(uuid.uuid4())
     dest_dir = Path(settings.upload_dir) / project_id
@@ -124,12 +134,12 @@ async def upload_project(file: UploadFile = File(...)):
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > MAX_IFC_BYTES:
+                if total > MAX_UPLOAD_BYTES:
                     dest_path.unlink(missing_ok=True)
                     shutil.rmtree(dest_dir, ignore_errors=True)
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File exceeds maximum size ({MAX_IFC_BYTES // (1024 * 1024)} MB).",
+                        detail=f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
                     )
                 out.write(chunk)
     except HTTPException:
@@ -147,19 +157,14 @@ async def upload_project(file: UploadFile = File(...)):
 async def upload_project_with_id(
     project_id: str,
     request: Request,
-    x_filename: str = Header(default="model.ifc", alias="X-Filename"),
+    x_filename: str = Header(default="model", alias="X-Filename"),
     content_encoding: str | None = Header(default=None, alias="Content-Encoding"),
 ):
     """
-    Accept raw or gzip-compressed IFC bytes for a client-assigned project id.
+    Accept raw or gzip-compressed IFC, STEP, or STP bytes for a client-assigned project id.
     Used for local preview + background sync.
     """
-    suffix = Path(x_filename).suffix.lower()
-    if suffix != ALLOWED_UPLOAD_SUFFIX:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only {ALLOWED_UPLOAD_SUFFIX} uploads are supported.",
-        )
+    _validate_upload_filename(x_filename)
 
     dest_dir = Path(settings.upload_dir) / project_id
     if dest_dir.exists():
@@ -175,11 +180,11 @@ async def upload_project_with_id(
         except OSError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid gzip body: {exc}") from exc
 
-    if len(body) > MAX_IFC_BYTES:
+    if len(body) > MAX_UPLOAD_BYTES:
         shutil.rmtree(dest_dir, ignore_errors=True)
         raise HTTPException(
             status_code=413,
-            detail=f"File exceeds maximum size ({MAX_IFC_BYTES // (1024 * 1024)} MB).",
+            detail=f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
         )
 
     try:
@@ -225,6 +230,11 @@ async def pipeline_status(project_id: str):
         raise HTTPException(status_code=404, detail="Unknown project_id.")
 
     status = info["status"]
+    try:
+        source_format = _find_uploaded_file(project_id).suffix.lower().lstrip(".") or None
+    except HTTPException:
+        source_format = None
+
     return PipelineStatusResponse(
         status=status,
         project_id=project_id,
@@ -232,6 +242,15 @@ async def pipeline_status(project_id: str):
         error=info.get("error"),
         graph_ready=bool(info.get("graph_ready")),
         json_ready=bool(info.get("json_ready")),
+        source_format=source_format,
+        preview_status=info.get("preview_status"),
+        preview_error=info.get("preview_error"),
+        checks=build_pipeline_checks(
+            source_format or "unknown",
+            graph_ready=bool(info.get("graph_ready")),
+            preview_status=info.get("preview_status"),
+            element_count=info.get("element_count"),
+        ),
     )
 
 
@@ -254,11 +273,20 @@ async def project_chat(project_id: str, body: ChatRequest):
 
     parts: list[str] = []
     if body.selected_element:
-        parts.append(f"[Selected IFC element id: {body.selected_element}]")
+        parts.append(f"[Selected model element id: {body.selected_element}]")
     parts.append(body.message)
     full_query = "\n".join(parts)
+    try:
+        source_format = source_format_for_path(_find_uploaded_file(project_id))
+    except HTTPException:
+        source_format = "unknown"
 
-    result = await run_agent(query=full_query, project_id=project_id, is_voice=body.is_voice)
+    result = await run_agent(
+        query=full_query,
+        project_id=project_id,
+        source_format=source_format,
+        conversation_history=[message.model_dump() for message in body.history],
+    )
     tool_calls = result["tool_calls"]
 
     references = [
@@ -281,7 +309,7 @@ async def project_chat(project_id: str, body: ChatRequest):
 
 @router.get("/{project_id}/ifc")
 async def download_ifc(project_id: str):
-    """Stream uploaded IFC for immediate in-browser rendering."""
+    """Stream the uploaded source model for immediate browser use."""
     path = _find_uploaded_file(project_id)
     return FileResponse(
         path,
@@ -317,34 +345,3 @@ async def download_glb(project_id: str):
         media_type="model/gltf-binary",
         filename=f"{project_id}.glb",
     )
-
-
-@router.post("/{project_id}/voice/token", response_model=VoiceTokenResponse)
-async def voice_token(project_id: str):
-    """Mint a LiveKit room token scoped to this project's voice session."""
-    if not settings.livekit_url or not settings.livekit_api_key or not settings.livekit_api_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="LiveKit is not configured (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET).",
-        )
-
-    async with get_session() as session:
-        project = await get_project(project_id, session)
-    if project is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Knowledge graph not ready yet — wait for Neo4j ingest.",
-        )
-
-    from livekit import api as lk_api
-
-    room_name = f"bim-{project_id}"
-    token = (
-        lk_api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
-        .with_identity(f"user-{uuid.uuid4().hex[:10]}")
-        .with_name("BIM User")
-        .with_grants(lk_api.VideoGrants(room_join=True, room=room_name))
-        .with_metadata(json.dumps({"project_id": project_id}))
-        .to_jwt()
-    )
-    return VoiceTokenResponse(token=token, url=settings.livekit_url, room_name=room_name)

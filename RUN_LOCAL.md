@@ -1,6 +1,6 @@
 # Run locally (bare metal)
 
-Docker is optional. Use **3 terminals** (plus a database).
+Docker is optional. Use **2 terminals** (plus a database).
 
 ## 0. Database (pick one)
 
@@ -29,25 +29,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Check: http://localhost:8000/health
 
-## 2. LiveKit voice worker (terminal 2)
-
-Only needed for the **Voice** tab. Uses LiveKit Cloud (not a local LiveKit server).
-
-```bash
-cd livekit-voice-agent
-# if you already have .venv from uv:
-source .venv/bin/activate
-# else:
-# uv sync && source .venv/bin/activate
-
-export BIM_API_BASE=http://127.0.0.1:8000
-# LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET from .env (load_dotenv in agent.py)
-
-python agent.py dev
-# or un run agent.py dev
-```
-
-## 3. Frontend (terminal 3)
+## 2. Frontend (terminal 2)
 
 ```bash
 cd frontend
@@ -61,8 +43,7 @@ Open http://localhost:5173 — Vite proxies `/api` to port 8000.
 
 | Where | Variables |
 |-------|-----------|
-| `bim_assistant/.env` | `ANTHROPIC_API_KEY`, `NEO4J_URI` → `localhost`, `LIVEKIT_*` for voice tokens |
-| `livekit-voice-agent/.env` | Same `LIVEKIT_*`, optional `BIM_API_BASE` |
+| `bim_assistant/.env` | `ANTHROPIC_API_KEY`, `NEO4J_URI` → `localhost` |
 | `frontend/.env` | `VITE_API_URL` empty = use Vite proxy |
 
 ## Docker (unchanged)

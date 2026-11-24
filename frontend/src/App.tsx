@@ -2,10 +2,13 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { UploadPage } from "./pages/UploadPage";
 import { ProjectWorkspace } from "./pages/ProjectWorkspace";
+import { MonitoringDashboard } from "./pages/MonitoringDashboard";
 
 export default function App() {
   const location = useLocation();
   const isWorkspace = location.pathname.startsWith("/project/");
+
+  if (location.pathname === "/monitoring") return <MonitoringDashboard />;
 
   if (!isWorkspace && location.pathname !== "/") {
     return <Navigate to="/" replace />;
